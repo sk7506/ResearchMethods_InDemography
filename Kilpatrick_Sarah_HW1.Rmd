@@ -1,0 +1,1054 @@
+---
+title: "SOC/CSSS/CSDE 533 Homework 1 Solutions"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+  pdf_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+
+install.packages("devtools")
+
+# Install and load the [World Population Prospects (WPP) 2024](https://github.com/PPgp/wpp2024), `R` package.
+library(devtools)
+options(timeout = 600)
+install_github("PPgp/wpp2024")
+library(wpp2024)
+
+## Libraries
+library(wpp2024)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(kableExtra)
+library(gridExtra)
+library(haven)
+library(knitr)
+library(scales)
+library(patchwork)
+```
+
+# Problem 1: Estimating the growth rate of a closed population - 10 points
+
+*Essential Demographic Methods* *Ch. 1 Exercise 11. Dates at which world
+population first exceeded each number of billions from 1 to 7 are
+estimated to be 1) 1800, 2) 1925, 3) 1960, 4) 1974, 5) 1987, 6) 1999, 7)
+2011. Estimate the **growth rate**,* $\mathbf{R}$ *between each of these
+dates. Present your results in a table.*
+
+We know from chapter 1 that the initial formula for exponential growth
+can be written as $K(t + n) = {K(t)\cdot{e^{R_{n}}}}$ where:
+
+\- $t$: year of step 1
+
+\- $n$: number of years after step 1
+
+\- $K(t)$: Population at year t
+
+\- $K(t+n)$: Population at year t+n
+
+\- $R_{n}$: exponential growth rate for years n
+
+Therefore, we solve for $e^{R_{n}}$ by dividing $K(t)$ from both sides
+and taking the natural log of both sides:
+$ln({\frac{K(t + n)}{K(t)}}) = R_{n}$
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+#creates the data frame
+years <- c(1800, 1925, 1960, 1974, 1987, 1999, 2011)
+population_B <- c(1.00, 2.00, 3.00, 4.00, 5.00, 6.00, 7.00) 
+#population in billions
+population_data <- data.frame(years, population_B)
+# print(population_data)
+
+population_data <- population_data %>%
+  mutate(growth_rate = log( population_B / lag(population_B) ) / ( years - lag(years) ) )
+
+# View the result in a pretty way
+kable(population_data, 
+      col.names = c("Year", "Population (Billion)", "Growth Rate"),
+      digits = 4,
+      caption = "Population and Growth Rate Over Time") %>%
+  kable_styling(
+    font_size = 15
+  )
+```
+
+The code containing mutate() and piping is adapted from the Posit
+Community Forum about the tidyverse and dplyr packages.
+
+# Problem 2: Estimating the growth rate of a closed population - 40 points
+
+**(a)** **10 points** *Use the `pop1dt` or `pop1` datasets to estimate
+the yearly growth rates,* $R_t$*, under the assumption of **exponential
+growth**, for the world between 1951-2023. Show your calculation code in
+an `R` chunk. In a two-panel plot, plot the world's population each year
+along side a plot of the yearly growth rates.*
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+#Loads Data
+data(pop1dt)
+#just to see it
+# head(pop1dt)
+```
+
+The code to load the data is adapted from the [UNWPP2024 R Package
+Github](https://github.com/PPgp/wpp2024)
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Filters the data for World population and years between [1951,2023]
+pop1dt_world_5123 <- pop1dt %>%
+  filter(country_code == 900, year >= 1951, year <= 2023) %>%
+  select(year, pop) %>%
+  arrange(year)
+
+# Print the filtered dataset
+# head(pop1dt_world_5123)
+```
+
+The code to filter, select, and arrange is adapted from the tplyr and
+tidyverse article called [Keep Rows That Match a
+Condition](https://dplyr.tidyverse.org/reference/filter.html).
+
+This code calculates the exponential growth rate, but does not convert
+it to a percent.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Calculates growth rates
+pop1dt_world_5123 <- pop1dt_world_5123 %>%
+  mutate(growth_rate = log( ( pop / lag(pop) ) / ( year - lag(year) ) ) ) # Exponential growth rate
+
+kable(pop1dt_world_5123 %>%
+    mutate(pop = comma(pop)),
+    col.names = c("Year", "Population", "Growth Rate"), 
+    digits = 4,  
+    caption = "World Population and Growth Rate Over Time (1951-2023)") %>%
+  kable_styling(font_size = 15) %>%
+  scroll_box(width = "600px", height = "500px")
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE, message=FALSE, warning=FALSE}
+#world pop
+plot1 = ggplot(pop1dt_world_5123) + 
+  geom_line(aes(x = year, y = pop), color = "steelblue", linewidth = 1.5) + 
+  labs(title = "World Population (1951-2023)", x = "Year", y = "World Population (Billions)") + 
+  theme_minimal()
+#pop growth rates
+plot2 = ggplot(pop1dt_world_5123) + 
+  geom_line(aes(x = year, y = growth_rate * 100), color = "slateblue", linewidth = 1.5) + 
+  labs(title = "Population Growth Rates (1951-2023)", x = "Year", y = "Growth Rate (as a %)") + 
+  theme_minimal()
+
+#two panel plot
+plot1 + plot2 + plot_layout(ncol = 2)
+```
+
+**(b)** **10 points** *Use the `misc1dt` dataset's births and deaths in
+combination with the `pop1dt` or `pop1` datasets to calculate the
+person-years lived and the yearly global crude growth rate,* $CGR_t$
+*for* $t = 1951$ *and* $t = 2023$*. Show your calculation code in an `R`
+chunk and present your answers in a table. State any assumptions you
+make while calculating your estimate of person-years.*
+
+**Person-years example:** 5 babies, four live to age of 5 but one lives
+to 6 months, the person-years for these 5 babies total are 5 + 5 + 5 +
+5 + 0.5 = 20.5 person-years.
+
+It appears that
+$\text{Crude Growth Rate (CGR)} = \text{Crude Birth Rate (CBR)} - \text{Crude Death Rate (CDR)}$.
+This comes from the textbook Essential Demographic Methods by Wachter
+and the [Periods and Cohorts lecture by Ernesto F.L. Amaral,
+2019](https://www.ernestoamaral.com/docs/soci320-19fall/Lecture02.pdf).
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+#Load the datasets
+data(misc1dt)
+```
+
+This code chunk calculates the Crude Growth Rate (CGR) in a new column
+labeled cgr.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Filters the data for World population and years between [1951,2023]
+misc1dt_world_cgr_5123 <- misc1dt %>%
+  filter(country_code == 900, year >= 1951, year <= 2023) %>%
+  select(year, cbr, cdr) %>%
+  arrange(year) %>%
+  mutate(cgr = cbr - cdr)
+
+#present the filtered dataset
+kable(misc1dt_world_cgr_5123, 
+      col.names = c("Year", "Crude Birth Rate", "Crude Death Rate", "Crude Growth Rate"),
+      digits = 2,  
+      caption = "Yearly Crude Growth Rates for `misc1dt` dataset (1951-2023)") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+There are many ways to calculate annual person-years, and I will be
+using the method presented in Amaral's slide 14 under the title
+Approximation for PPYL.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+#Merge the two datasets so there's just 1 with Year, Population, prev-calculated Growth Rate, cbr, cdr, and cgr.
+pop1_misc1dt_world_cgr_5123 = merge(pop1dt_world_5123, misc1dt_world_cgr_5123, by = 'year')
+
+# head(pop1_misc1dt_world_cgr_5123)
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Creates a new column called pop_eoy, the population at the end of the year, which is = pop*e^(growth rate)
+pop1_misc1dt_world_cgr_5123$pop_eoy <- pop1_misc1dt_world_cgr_5123$pop * exp(pop1_misc1dt_world_cgr_5123$growth_rate)
+
+# Calculate person-years as the average of start pop and end pop_eoy
+pop1_misc1dt_world_cgr_5123$personyears <- (pop1_misc1dt_world_cgr_5123$pop + pop1_misc1dt_world_cgr_5123$pop_eoy) / 2
+
+#show final answer w Kable
+kable(
+  pop1_misc1dt_world_cgr_5123 %>%
+    mutate(
+      pop = comma(pop),
+      pop_eoy = comma(pop_eoy),
+      personyears = comma(personyears)
+    ),
+  col.names = c(
+    "Year", 
+    "Population", 
+    "Growth Rate", 
+    "Crude Birth Rate", 
+    "Crude Death Rate", 
+    "Crude Growth Rate", 
+    "Population End-Of-Year", 
+    "Person-Years"
+  ),
+  digits = 2,
+  caption = "Yearly Person-years calculation (1951-2023)"
+) %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+**(c)** **5 points** *Assuming* $R_t = R_{2021}$ *for*
+$t = 2024, \dots, 2100$ *and exponential growth model in the world's
+population, estimate the world's population,* $P_t$*, at*
+$t = 2025, 2050, 2075, 2100$*. Show your calculation code in an `R`
+chunk and present your answers in a table.*
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+#Filter thte dataset for just 2021
+pop_2021 = pop1_misc1dt_world_cgr_5123$pop[pop1_misc1dt_world_cgr_5123$year == 2021]
+R_2021 = pop1_misc1dt_world_cgr_5123$growth_rate[pop1_misc1dt_world_cgr_5123$year == 2021]
+#check it
+# paste("Global population in 2021:", pop_2021)
+# paste("Growth rate in 2021:", R_2021)
+#target years
+estimating_years = c(2025, 2050, 2075, 2100)
+
+estimated_populations = pop_2021 * exp(R_2021 * (estimating_years - 2021))
+
+output_exp = data.frame(year = estimating_years, pop = estimated_populations)
+
+
+kable(
+  output_exp %>%
+    mutate(pop = comma(pop)),
+  col.names = c(
+    "Year", 
+    "Projected Population"),
+  caption = "Estimated World Population Using Exponential Growth"
+) %>%
+  kable_styling(
+    font_size = 15
+  )
+```
+
+**(d)** **5 points** *Assuming* $B_t = B_{2023}$*,* $D_t = D_{2023}$*,
+and* $K_t = K_{2023}$ *for* $t = 2024, \dots, 2100$ *and a geometric
+growth model in the world's population, estimate the world's
+population,* $P_t$*, at* $t = 2025, 2050, 2075, 2100$*. Show your
+calculation code in an `R` chunk and present your answers in a table.*
+
+$P_t = P_{2023} \times \left( 1 + \frac{B_{2023} - D_{2023}}{P_{2023}} \right)^{(t - 2023)}$
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Viewing the input parameters first
+P_2023 <- pop1_misc1dt_world_cgr_5123$pop[pop1_misc1dt_world_cgr_5123$year == 2023]
+B_2023 <- pop1_misc1dt_world_cgr_5123$cbr[pop1_misc1dt_world_cgr_5123$year == 2023]  # Crude birth rate
+D_2023 <- pop1_misc1dt_world_cgr_5123$cdr[pop1_misc1dt_world_cgr_5123$year == 2023]  # Crude death rate
+
+#Calculating the growth rate as the difference between birth rate and death rate (per 1,000 people)
+growth_rate <- (B_2023 - D_2023) / 1000  # Convert to decimal form
+
+# Estimating population for the specified years
+estimating_years <- c(2025, 2050, 2075, 2100)
+
+#Applying the exponential growth formula
+estimated_populations = P_2023 * (1 + growth_rate)^(estimating_years - 2023)
+
+# Create an output df with the results
+output_geom <- data.frame(year = estimating_years, Projected_Population = estimated_populations)
+
+kable(
+  output_geom %>%
+    mutate(Projected_Population = comma(Projected_Population)),
+  col.names = c(
+    "Year", 
+    "Projected Population"),
+  caption = "Estimated World Population Using Geometric Growth"
+) %>%
+  kable_styling(
+    font_size = 15
+  )
+
+```
+
+**(e)** **5 points** *Using the `popproj1dt` dataset, plot the yearly
+population projections from 2023-2100 as a line and add the 80%
+uncertainty interval bounds (`pop_80l`, `pop_80u`). Add your population
+estimates from 1(c) and 1(d), distinguishing the three sources of
+population numbers by color or symbol in some way.*
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+data(popproj1dt)
+
+popproj1dt_world <- popproj1dt %>%
+  filter(country_code == 900, year >= 2025) %>%
+  select(year, pop, pop_80l, pop_80u) %>%
+  arrange(year)
+# popproj1dt_world
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+year_sequence <- seq(2025, 2100, by = 1)
+
+# Cubic spline to plot
+spline_fit_exp <- spline(output_exp$year, output_exp$pop, xout = year_sequence)
+spline_fit_geom <- spline(output_geom$year, output_geom$Projected_Population, xout = year_sequence)
+
+# Plotting the population projections
+ggplot() + 
+  geom_line(aes(x = popproj1dt_world$year, y = popproj1dt_world$pop, color = "WPP 2024 Projection Data"), size = 1) +
+  geom_ribbon(aes(x = popproj1dt_world$year, ymin = popproj1dt_world$pop_80l, ymax = popproj1dt_world$pop_80u), 
+              fill = "steelblue", alpha = 0.3) +
+  geom_line(aes(x = spline_fit_exp$x, y = spline_fit_exp$y, color = "Exponential Projection"), linewidth = 1) +
+  geom_line(aes(x = spline_fit_geom$x, y = spline_fit_geom$y, color = "Geometric Projection"), linewidth = 1) +
+  labs(title = "Yearly Global Population Projections (2024-2100)", x = "Year", y = "Global Population") + 
+  scale_color_manual(values = c("WPP 2024 Projection Data" = "steelblue", "Exponential Projection" = "slateblue", "Geometric Projection" = "seagreen")) + 
+  scale_y_continuous(labels = label_comma()) +
+  theme_minimal() + 
+  theme(legend.title = element_blank())
+```
+
+**(f)** **5 points** *Comment on the geometric and exponential growth
+assumptions compared to the more sophisticated model underlying the WPP
+2024 projections, which are Bayesian hierarchical models of life
+expectancy, the total fertility rate, and net migration that incorporate
+demographic theory.*
+
+The first two, the geometric and exponential growth models, are
+relatively simple. For example, they do not account for migration or
+other real-life determinants of population size. The WPP 2024
+projections are much more sophisticated because they include many more
+factors into their forecasts.
+
+According to the textbook and external presentation slides, the first
+two methods are sufficient for preliminary forecasting, such as with
+data lacking substantial information. They can be implemented easily and
+quickly. However, these methods are oversimplified.
+
+Geometric growth has a constant rate of change and occurs in discrete
+steps, while exponential growth rate increases continuously. When the
+timesteps are small, exponential growth will have much more growth than
+geometric growth, but at the yearly scale, this difference is not
+visible.
+
+# Problem 3: Child mortality - 25 points
+
+*We will use the [Demographic & Health Surveys](https://dhsprogram.com)
+model births record dataset, `ZZBR62FL.DAT` for this problem. [Download
+full model datasets
+here.](https://dhsprogram.com/data/Download-Model-Datasets.cfm?flag=1)[See
+the Recode manual
+here.](https://dhsprogram.com/publications/publication-dhsg4-dhs-questionnaires-and-manuals.cfm)*
+
+***Variables:***
+
+-   ***caseid** - unique identifier of the child's mother*
+-   ***bidx** - unique identifier of children for a given **caseid***
+-   ***v006** - interview month*
+-   ***v007** - interview year*
+-   ***b1** - birth month*
+-   ***b2** - birth year*
+-   ***b5** - indicator child was alive at time of interview*
+-   ***b7** - child age in months at death*
+
+```{r load_data, eval=TRUE, echo=FALSE, tidy=TRUE}
+## Note: change the filepath to match your setup
+births <- read_dta("~/Documents/CSDE 533 Homeworks/ZZBR62FL.DTA") %>% 
+  select(caseid, bidx, v006, v007, b1, b2, b5, b7) 
+# head(births)
+```
+
+**(a)** **5 points** *How many person-months does the 1981 sample birth
+cohort contribute to the calendar years 1981, 1982, and 1983. Show your
+calculation code in an `R` chunk, and present your answers in a table.
+State any assumptions you make in calculating your answers.*
+
+I assumed that a child contributes a person-month for the month they
+were born; for example, a child born in 02/1981 and died in 09/1981
+contributes 8 person-months rather than 7.
+
+if a child has NA in column b7, then they have contributed an amount
+person-months equivalent to the amount of months between their
+start_month and December for 1981, and 12 person-months each for 1982
+and 1983, because they survived to the end of all 3 years.
+
+If the value in column b7 for a child is between 0-12, they contributed
+that amount of person-months for 1981, but 0 for 1982 and 0 for 1983.
+This is because this is their age in months when they died, and in one
+year, a child in the 1981 cohort can be a maximum of 12 months old.
+
+If the value in column b7 for a child is between 12-24, they contributed
+12 person-months for 1981, and contributed the difference between the
+value in column b7 minus 12 for 1982, and 0 for 1983.
+
+That is, if for example a child has a start_month of 4 and a start_year
+of 1981, and a end_year of 1983 and an end_month of 12, they have
+contributed 12 person-months for each 1981, 1982, and 1983. However, for
+another child who has a start month of 4 and a start year of 1981, and a
+end year of 1981 and an end_month of 8, they only contribute 4 person
+months to 1981 but none to 1982 or 1983.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+
+#Filtering the data for only the 1981 cohort and adding four new columns
+#start_month and end_month indicate the month of the year they were born/died
+#start_year/end_year do the same.
+births_1981_pm <- births %>%
+  filter(b2 == 1981) %>%
+  mutate(
+    start_month = b1,
+    end_month_1981 = ifelse(is.na(b7), 12, pmin(12, start_month + b7 - 1)),
+    months_1981 = ifelse(is.na(b7), 12 - start_month + 1, 
+                         pmax(0, end_month_1981 - start_month + 1)),
+    months_1982 = ifelse(is.na(b7), 12, 
+                         ifelse(b7 > 12, pmin(12, b7 - 12), 0)),
+    months_1983 = ifelse(is.na(b7), 12, 
+                         ifelse(b7 > 24, pmin(12, b7 - 24), 0))
+  )
+# check the start and end months/years
+# head(births_1981_pm)
+#make the person-months table for each year
+person_months <- births_1981_pm %>%
+  summarize(
+    `1981` = sum(months_1981, na.rm = TRUE),
+    `1982` = sum(months_1982, na.rm = TRUE),
+    `1983` = sum(months_1983, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = everything(), names_to = "year", values_to = "person_months")
+
+kable(person_months, col.names = c("Year", "Person Months"),
+      caption = "Estimated Person-MonthsFrom the 1981 Sample \nBirth Cohort in 1981, 1982, and 1983") %>%
+  kable_styling(
+    font_size = 15
+  )
+
+```
+
+**(b)** **5 points** *What is the sample cohort infant mortality rate
+(IMR) for the birth cohort born in 1982? Show your calculation code in
+an `R` chunk.*
+
+*In the same `R` chunk, **(c)5 points** What is the sample period infant
+mortality rate (IMR) for the year 1982?*
+
+I am assuming infant deaths refer to deaths of children under the age of
+12 mo.
+
+Also, I'm assuming sample cohort
+$IMR = \frac{\text{Number of deaths of children under 1 year of age*1000}}{\text{Total Live Births}}$,
+whereas I'm assuming sample period
+$IMR_{1982} = \frac{\text{Number of deaths of children under 1 year of age in 1982*1000}}{\text{Total Live Births in 1982}}$.
+
+That is, in the sample cohort IMR, I am focusing on children born in
+1982, but they could die in either 1982 or 1983, just until they turn
+12mo.
+
+However, for sample period IMR, I am focusing on the deaths of all
+infants (0-12mo.) that died in 1982. They could have been born as early
+as 1981.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# COHORT IMR for 1982
+births_1982_imr = births %>%
+  filter(b2 == 1982) # Filter for 1982 birth cohort
+
+# Total live births in the 1982 cohort
+total_live_births_cohort <- nrow(births_1982_imr)
+
+# Infant deaths in the 1982 cohort (under 1 year, b7 < 12 months)
+infant_deaths_1982 = births_1982_imr %>%
+  filter(!is.na(b7), b7 < 12) %>%
+  nrow()
+
+# Cohort IMR for 1982
+cohort_imr_1982 = (infant_deaths_1982 / total_live_births_cohort) * 1000
+
+# PERIOD IMR for 1982
+# Total live births in 1982
+live_births_1982 = births %>%
+  filter(b2 == 1982) %>%
+  nrow()
+
+# Infant deaths that occurred in 1982 (b7 < 12 months AND death year = 1982)
+infant_deaths_period = births %>%
+  filter(!is.na(b7), 
+         b7 < 12, 
+         b2 + (b1 + b7) %/% 12 == 1982) %>%
+  nrow()
+
+# Period IMR for 1982
+period_imr_1982 = (infant_deaths_period / live_births_1982) * 1000
+
+# Results
+results = data.frame(
+  Metric = c("Cohort IMR for 1982 per 1,000 live births", "Period IMR for 1982 per 1,000 live births"),
+  IMR = c(cohort_imr_1982, period_imr_1982)
+)
+
+#print(results, row.names = FALSE)
+kable(results,  digits = 2, caption = "Period vs. Cohort Infant Mortality Rate (IMR) for 1982 per 1,000 live births") %>%
+  kable_styling(
+    font_size = 15
+  )
+```
+
+**(d)** **10 points** *Calculate cohort age-specific mortality rates for
+each of month the first 12 months of life for the birth cohort born in
+2012. Show your calculation code in an `R` chunk. Present your estimates
+in a plot with age on the* $x$*-axis. State clearly any assumptions you
+make in your calculation.*
+
+I will be calculating the cohort age-specific mortality rates for each
+month by assuming
+$\text{Mortality Rate at Age-Month } x = \frac{\text{Total Count of Deaths at Month } x}{\text{Total Count of Births in the Cohort}}* 1000$
+
+In making the mortality rate calculation, I am assuming the deaths/total
+births is constant for each month. That is, I'm not calculating the
+fraction of deaths out of surviving infants, but rather the fraction of
+deaths in that month out of total live births for that cohort.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+births_2012_age_specific_mr <- births %>%
+  filter(b2 == 2012) %>% # Filter for 1982 birth cohort 
+  filter(!is.na(b7), b7 <= 12)
+
+# head(births_2012_age_specific_mr)
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+#gets the total number of live births for infants born in 2012
+total_2012_b = nrow(births_2012_age_specific_mr)
+
+age_specific_mortality = births_2012_age_specific_mr %>%
+  group_by(b7) %>% # Group by age at death (b7)
+  summarise(deaths = n()) %>%
+  mutate(mortality_rate_per1000 = (deaths / total_2012_b) * 1000)
+# age_specific_mortality
+
+all_months = data.frame(b7 = 0:12)
+age_specific_mortality = all_months %>%
+  left_join(age_specific_mortality, by = "b7") %>%
+  mutate(
+    deaths = ifelse(is.na(deaths), 0, deaths),
+    mortality_rate_per1000 = ifelse(is.na(mortality_rate_per1000), 0, mortality_rate_per1000)
+  )
+# all_months
+
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+ggplot(age_specific_mortality, aes(x = b7, y = mortality_rate_per1000)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "red3", size = 2) +
+  labs(
+    title = "Cohort Age-Specific Mortality Rates per Month for 2012 Birth Cohort",
+    x = "Age at Death (Months)",
+    y = "Mortality Rate per 1,000 Live Births"
+  ) +
+  scale_x_continuous(breaks = seq(0, max(age_specific_mortality$b7, na.rm = TRUE), by = 1)) +
+  theme_bw()
+
+```
+
+# Problem 4: Age standardization - 25 points
+
+*Go to the [Human Mortality
+Database](https://www.mortality.org/Home/Index) and download the
+following files for a country of your choice:*
+
+-   *Death Rates 5x5*
+-   *Population 5x1*
+
+***Note:** You will have to register for an account and will immediately
+receive a confirmation email. Once you confirm your email, you can
+download the data.*
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+# Loads the data
+pop_chile_raw = read.csv("~/Documents/CSDE 533 Homeworks/Population5.txt", skip= 3, header = FALSE, col.names= c("Year", "Age", "Female", "Male", "Total"), sep = "")
+
+death_rates_chile_raw = read.csv("~/Documents/CSDE 533 Homeworks/Mx_5x5.txt", skip= 3, header = FALSE, col.names= c("Year", "Age", "Female", "Male", "Total"), sep = "")
+
+#Create factors for the years in case it's helpful later
+pop_chile_raw$Year = factor(pop_chile_raw$Year, levels = as.character(1992:2021), ordered = TRUE)
+
+death_rates_chile_raw$Year = factor(death_rates_chile_raw$Year, levels = c("1992-1994", "1995-1999", "2000-2004", "2005-2009", "2010-2014", "2015-2019"),ordered = TRUE)
+
+#Check it
+#head(pop_chile_raw)
+#print(death_rates_chile_raw)
+#summary(death_rates_chile_raw)
+
+# head(death_rates_chile_raw)
+# summary(pop_chile_raw)
+# dim(death_rates_chile_raw)
+# death_rates_chile_raw$Year[143]
+# colnames(death_rates_chile_raw)
+```
+
+**(a)** **5 points** *For two periods in the datasets, create a
+two-panel plot containing histograms of the age-specific death rates for
+males and histograms of the age-specific population (e.g. use two
+different colors on the same plot for each period).*
+
+I am assuming this means to create a two-panel plot, where one panel has
+the histogram of age-specific death rates for males, with two periods
+overlaid (stacked), and another panel has the histogram of the
+age-specific population for males, with the same two periods as the
+first panel, overlaid.
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+period1 = "1995-1999"
+period2 = "2015-2019"
+years_in_period1 = c(1995, 1995, 1997, 1998, 1999)
+years_in_period2 = c(2015, 2016, 2017, 2018, 2019)
+
+# Filter pop_chile_raw for years_in_period1 and years_in_period2
+pop_chile_filtered = pop_chile_raw[pop_chile_raw$Year %in% c(years_in_period1, years_in_period2), ]
+
+# Add the Period column to the population dataset for plotting against the death rates dataset
+pop_chile_filtered$Period= ifelse(pop_chile_filtered$Year %in% years_in_period1, period1, period2)
+pop_chile_filtered$Period = factor(pop_chile_filtered$Period, levels = c("1995-1999", "2015-2019"),ordered = TRUE)
+
+#Create factors for the ages in death_rates_chile_raw so they display correctly in the histograms
+pop_chile_filtered$Age <- factor(pop_chile_filtered$Age, 
+                                    levels = c("0", "1-4", "5-9", "10-14", "15-19", "20-24","25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74","75-79", "80-84", "85-89", "90-94", "95-99","100-104", "105-109", "110+"), ordered = TRUE)
+death_rates_chile_raw$Age <- factor(death_rates_chile_raw$Age, 
+                                    levels = c("0", "1-4", "5-9", "10-14", "15-19", "20-24","25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64", "65-69", "70-74","75-79", "80-84", "85-89", "90-94", "95-99","100-104", "105-109", "110+"), ordered = TRUE)
+# Filter death_rates_chile_raw for "1995-1999" and "2015-2019"
+death_rates_chile_filtered = death_rates_chile_raw[death_rates_chile_raw$Year %in% c(period1, period2), ]
+#check it
+# summary(pop_chile_filtered)
+#summary(death_rates_chile_filtered)
+# death_rates_chile_filtered
+```
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+# There was an issue plotting with the regular filtered data so I elected to group by age and period which helps plot clearly.
+age_population_summary = pop_chile_filtered %>%
+  group_by(Age, Period) %>%
+  summarise(
+    Total_Male_Population = sum(Male, na.rm = TRUE),
+    Total_Female_Population = sum(Female, na.rm = TRUE),
+    Total = sum(Total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Age, Period)
+
+# Split the larger age pop summary for ease of use later
+age_population_1995_1999 = age_population_summary %>%
+  filter(Period == "1995-1999")
+age_population_2015_2019 = age_population_summary %>%
+  filter(Period == "2015-2019")
+
+# and the death_rates_chile_filtered
+death_rates_1995_1999 = death_rates_chile_filtered %>%
+  filter(Year == "1995-1999")
+death_rates_2015_2019 = death_rates_chile_filtered %>%
+  filter(Year == "2015-2019")
+#check it
+# print(age_population_1995_1999)
+# print(age_population_2015_2019)
+# print(death_rates_1995_1999)
+# print(death_rates_2015_2019)
+```
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+# Plot the histogram of Male Death Rates by Age Group for the two periods
+plot1 = ggplot(death_rates_chile_filtered, aes(x = Age, y = Male, fill = Year)) +
+  geom_bar(stat = "identity", position = "dodge", color = "white", linewidth = 1) +  # use `linewidth` here
+  scale_fill_manual(values = c("steelblue", "slateblue")) +
+  ggtitle("Age-Specific Male Death Rates in Chile\nby Age Group (1995-1999 vs 2015-2019)") +
+  xlab("Age Group") +
+  ylab("Male Death Rate") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+        legend.position = "none",
+        plot.title = element_text(size = 10))
+
+plot2 = ggplot(age_population_summary, aes(x = Age, y = Total_Male_Population, fill = Period)) +
+  geom_bar(stat = "identity", position = "dodge", color = "white", linewidth = 1) +
+  scale_fill_manual(values = c("steelblue", "slateblue")) +
+  ggtitle("Male Population in Chile by Age Group\n(1995-1999 vs 2015-2019)") +
+  xlab("Age Group") +
+  ylab("Population") +
+  scale_y_continuous(labels = label_comma()) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7),
+        legend.position = "bottom", 
+        plot.title = element_text(size = 10))
+
+# Combine the two plots without any legends
+plot1 + plot2 + plot_layout(ncol = 2)
+```
+
+It is interesting to see that 20 years after the first period, the death
+rate is decreased for all male age groups below the age of 100-104. I
+interpret this to mean that more people are living to old age in the
+2010s compared to the 1990s. This is supported by the population
+distribution in the second graph, where we see an increase in population
+in all age groups.
+
+Additionally, another interesting moment is the blue spike of population
+in the 5-9 age category becomes the purple spike in population in the
+25-29 category 20 years later. This visualization shows that age cohort
+growing up.
+
+**(b)** **5 points** *Calculate the crude death rate for each period you
+selected using the death rates and age-specific population composition.
+Show your calculation in an `R` chunk and present your answers in a
+table.*
+
+I am assuming to calculate the CDR for the total population instead of
+the just males as in the last problem. I am also assuming CDR can be
+estimated using the following formula:
+$\text{Crude Death Rate (CDR)} = \frac{\text{Total Number of Deaths}}{\text{Total Population}} \times 1000$
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+# we'll be using these data tables for this question:
+
+#If this isn't commented out it throws an error
+# age_population_1995_1999 = age_population_1995_1999 %>%
+#   rename(Year = Period)
+# 
+# age_population_2015_2019 = age_population_2015_2019 %>% 
+#   rename(Year = Period)
+
+# print(age_population_1995_1999)
+# print(age_population_2015_2019)
+# print(death_rates_1995_1999)
+# print(death_rates_2015_2019)
+```
+
+```{r, eval=TRUE, echo=FALSE, tidy=TRUE}
+# if we don't change the years back to characters then there is an error: Error in `left_join()`: ! Can't join `x$Year` with `y$Year` due to incompatible types. ℹ `x$Year` is a <ordered<e8cad>>. ℹ `y$Year` is a <ordered<78b03>>.
+
+#for period 1
+age_population_1995_1999 <- age_population_1995_1999 %>%
+  mutate(Year = as.character(Period))
+
+death_rates_1995_1999 <- death_rates_1995_1999 %>%
+  mutate(Year = as.character(Year))
+
+#for period 2
+age_population_2015_2019 <- age_population_2015_2019 %>%
+  mutate(Year = as.character(Period)) 
+death_rates_2015_2019 <- death_rates_2015_2019 %>%
+  mutate(Year = as.character(Year))
+
+#join the data for each period on age and year/period for period 1
+joined_data_period1 = age_population_1995_1999 %>%
+  left_join(death_rates_1995_1999, by = c("Age", "Year"))
+
+#join the data for each period on age and year/period for period 2
+joined_data_period2 = age_population_2015_2019 %>%
+  left_join(death_rates_2015_2019, by = c("Age", "Year"))
+
+joined_data_period1 = joined_data_period1 %>%
+   rename(Total_Population = Total.x)
+joined_data_period2 = joined_data_period2 %>%
+   rename(Total_Population = Total.x)
+joined_data_period1 = joined_data_period1 %>%
+   rename(Total = Total.y)
+joined_data_period2 = joined_data_period2 %>%
+   rename(Total = Total.y)
+#to check
+
+# head(joined_data_period1)
+# head(joined_data_period2)
+
+```
+
+This new function calculates CDR per 1,000 individuals in the total
+population, per age range. This is different from the next question,
+which displays a CDR that is an average of all the age ranges' CDRs in
+order to compare it to the age-standardized death rate. It also is
+agnostic to the male/female subsets of the total population, which will
+be calculated in the next question.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+
+#this is a function to calculate total-population CDR over multiple periods to make it more replicable
+calculate_total_cdr = function(data) {
+  results <- data %>%
+    #Total deaths = Total_Population * Death Rate
+    mutate(
+      Total_Deaths = Total_Population * Total,  
+      Total_CDR = (Total_Deaths / Total_Population) * 1000
+    ) %>%
+    #Select relevant columns, total_male_pop and total_female_pop become important in the last few questions.
+    select(Age, Year, Total_Population, Total_Male_Population, Total_Female_Population, Total_Deaths, Total_CDR, Female, Male)  
+  
+  #n = Inf allows all columns to be displayed
+  # print(results, row.names = FALSE, n = Inf)
+  # return(results)
+}
+
+results_period1 = calculate_total_cdr(joined_data_period1)
+results_period2 = calculate_total_cdr(joined_data_period2)
+
+kable(results_period1 %>%
+        mutate(
+          Total_Population = comma(Total_Population),
+          Total_Male_Population = comma(Total_Male_Population),
+          Total_Female_Population = comma(Total_Female_Population),
+          Total_Deaths = comma(Total_Deaths)
+        ),
+      col.names = c("Age", "Year", "Total Population", "Total Male Population", 
+                    "Total Female Population", "Total Deaths", "Total CDR", "Female", "Male"),
+      caption = "Total Population Crude Death Rate by Age Group (1995-1999)") %>%
+  kable_styling(font_size = 15) %>%
+  scroll_box(width = "900px", height = "500px")
+
+kable(results_period2 %>%
+        mutate(
+          Total_Population = comma(Total_Population),
+          Total_Male_Population = comma(Total_Male_Population),
+          Total_Female_Population = comma(Total_Female_Population),
+          Total_Deaths = comma(Total_Deaths)
+        ),
+      col.names = c("Age", "Year", "Total Population", "Total Male Population", 
+                    "Total Female Population", "Total Deaths", "Total CDR", "Female", "Male"),
+      caption = "Total Population Crude Death Rate by Age Group (2015-2019)") %>%
+  kable_styling(font_size = 15) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+**(c)** **5 points** *Using age standardization to the most recent
+period you selected, compare the crude death rates and age-standardized
+death rates for males between the two periods. Comment on the comparison
+in text.*
+
+I am assuming the direct age standardization can be accomplished by
+using a description of the process in this PDF: [Chapter 7: Age
+standardization - World Health
+Organization](https://publications.iarc.who.int/_publications/media/download/3753/609d0d7711047dd76d7f3dbaa25d7f041fcd013e.pdf)
+and this study guide: [Standardization
+(#4)](https://quizlet.com/446047357/standardization-4-flash-cards/).
+
+I am also assuming the 2015-2019 period is the standard population, and
+that this CDR is the adjusted rate per 1,000 people. I have tried to
+adapt my function from the previous problem to use in this problem, with
+the goal being that I can use just this one in the future.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+male_cdr_and_asdr = function(data1, data2) {
+  # Calculate CDR for each period
+  calculate_cdr = function(data) {
+    results = data %>%
+      mutate(
+        Total_Male_Deaths = Total_Population * Male,  # Total deaths = Total_Population * Death Rate
+        Male_CDR = (Total_Male_Deaths / Total_Population) * 1000  # CDR formula
+      ) %>%
+      select(Age, Year, Total_Population, Total_Male_Deaths, Male_CDR, Male)
+    
+    # # Print results for this period
+    # print(results, n = Inf)
+    # return(results)
+  }
+  
+  # Calculate CDR for each period
+  results1 = calculate_cdr(data1)
+  results2 = calculate_cdr(data2)
+  
+  # Age-standardized deaths for the first period, aligned with the second period's population
+  age_standardized_deaths1 = sum(results1$Male * results2$Total_Population)
+  # Age-standardized deaths for the second period
+  age_standardized_deaths2 = sum(results2$Male * results2$Total_Population)
+  
+  # Total population of the second period for age standardization
+  total_population_period2 = sum(results2$Total_Population)
+  
+  # Calculate ASDR
+  asdr1 = (age_standardized_deaths1 / total_population_period2) * 1000
+  asdr2 = (age_standardized_deaths2 / total_population_period2) * 1000
+  
+  # Create comparison results
+  comparison = data.frame(
+    Period = c("1995-1999", "2015-2019"),
+    Crude_Death_Rate = c(mean(results1$Male_CDR), mean(results2$Male_CDR)),  # Mean CDR for each period
+    Age_Standardized_Death_Rate = c(asdr1, asdr2)
+  )
+  
+  # Print the comparison results
+  # print(comparison, row.names = FALSE)
+}
+
+# Apply the function
+output = male_cdr_and_asdr(joined_data_period1, joined_data_period2)
+
+kable(output, 
+      col.names = c("Period", "Male Crude Death Rate", "Male Age-Standardized Death Rate"), 
+      digits = 2, 
+      caption = "Male Population Crude Death Rate (1995-1999 to 2015-2019)") %>%
+  kable_styling(font_size = 15)
+```
+
+While crude rates are a quick and efficient metric that displays a
+summary of the population's death rate, age-standardized death rates are
+more complex. An age-standardized death rate is an example of an
+adjusted rate, something that changes or "adjusts" the crude rate to
+remove a confounding effect. This makes adjusted rates more robust to
+other factors which makes them ideal for comparing metrics.
+
+Direct age-standardization is a method that allows for comparing
+mortality rates across locations or time periods. In this case, the
+1995-1999 period's death rates are weighted by the population
+distribution in the most recent time period, from 2015-2019. When
+comparing the adjusted death rates between the two time periods, it
+appears that the male death rate in the 1990s was about the same
+compared to the male death rate in the 2010s. However, when looking at
+the CDR, this effect is not visible, which may be due to the overall
+increase in population in Chile from the 1990s to 2010s, not due to
+higher mortality between the 1990s to the 2010s.
+
+**(d)** **10 points** *Calculate the crude death rate for males and
+females from age-specific death rates and the age-specific population
+composition in the most recent period available. Then use age
+standardization to the male age distribution to calculate comparable
+crude death rates. Show your calculation in an `R` chunk and present
+your answers in a table. Comment on the comparison between the two
+sex-specific crude death rates and the set of sex-specific
+age-standardized death rates.*
+
+I assume this question to mean the following:
+
+1.  calculate the aggregate crude death rate for males and females for
+    1995-1999 and 2015-2019 using the more recent (2015-2019)
+    age-specific death rates and the age-specific population
+    composition.
+
+2.  Standardize the female population using the male population as a
+    reference to get the age-standardized adjusted female and male death
+    rates.
+
+This means the following output will be like in the previous problem,
+where any crude death rates and age-standardized crude death rates will
+be averaged across all age-groups, rather than having one CDR and ASDR
+per age group.
+
+```{r, eval=TRUE, echo=TRUE, tidy=TRUE}
+male_female_cdr_and_asdr = function(data1, data2) {
+  # Calculate CDR for each period (for both males and females)
+  calculate_cdr = function(data) {
+    results = data %>%
+      mutate(
+        Total_Male_Deaths = Total_Population * Male,  # Total Male deaths
+        Total_Female_Deaths = Total_Population * Female,  # Total Female deaths
+        Male_CDR = (Total_Male_Deaths / Total_Population) * 1000,  # CDR for Male
+        Female_CDR = (Total_Female_Deaths / Total_Population) * 1000  # CDR for Female
+      ) %>%
+      select(Age, Year, Total_Population, Total_Male_Deaths, Total_Female_Deaths, Male_CDR, Female_CDR, Male, Female)
+    
+    return(results)
+  }
+  
+  # Calculate CDR for both periods
+  results1 = calculate_cdr(data1)
+  results2 = calculate_cdr(data2)
+  
+  # Age-standardized deaths for males in both periods
+  age_standardized_deaths1_male = sum(results1$Male * results2$Total_Population)
+  age_standardized_deaths2_male = sum(results2$Male * results2$Total_Population)
+  
+  # Age-standardized deaths for females in both periods
+  age_standardized_deaths1_female = sum(results1$Female * results2$Total_Population)
+  age_standardized_deaths2_female = sum(results2$Female * results2$Total_Population)
+  
+  # Total population of the second period for age standardization
+  total_population_period2 = sum(results2$Total_Population)
+  
+  # Calculate ASDR for males and females
+  asdr1_male = (age_standardized_deaths1_male / total_population_period2) * 1000
+  asdr2_male = (age_standardized_deaths2_male / total_population_period2) * 1000
+  asdr1_female = (age_standardized_deaths1_female / total_population_period2) * 1000
+  asdr2_female = (age_standardized_deaths2_female / total_population_period2) * 1000
+  
+  # Create a comparison table
+  comparison = data.frame(
+    Period = c("1995-1999", "2015-2019"),
+    Male_Crude_Death_Rate = c(mean(results1$Male_CDR), mean(results2$Male_CDR)),
+    Female_Crude_Death_Rate = c(mean(results1$Female_CDR), mean(results2$Female_CDR)),
+    Male_Age_Standardized_Death_Rate = c(asdr1_male, asdr2_male),
+    Female_Age_Standardized_Death_Rate = c(asdr1_female, asdr2_female)
+  )
+  
+  # Print the comparison results
+  # print(comparison, row.names = FALSE)
+}
+
+# Apply the function
+output = male_female_cdr_and_asdr(joined_data_period1, joined_data_period2)
+
+kable(output, 
+      col.names = c("Period", "Male Crude Death Rate", "Female Crude Death Rate", "Male Age-Standardized Death Rate", "Female Age-Standardized Death Rate"), 
+      digits = 2, 
+      caption = "Assigned Gender at Birth Subset Unstandardized vs. Age-Standardized Crude Death Rates (1995-1999 to 2015-2019)") %>%
+  kable_styling(font_size = 15)
+```
+
+This table shows the crude and age-standardized death rates for males as
+in the previous question, but with the added comparison of crude and
+age-standardized death rates for females. Without adjusting for the
+structure of the population, both male and female crude death rates
+appear to be either the same (85.59 to 85.56 deaths per 1,000 people) or
+increasing (74.63 to 80.17 deaths per 1,000 people) over the 20 years
+between both periods of time. However, when the crude death rates are
+age-standardized using the male population in 2015-2019 as the frame of
+reference, the data reveals both male and female crude death rates
+dropped 3 and 2 people per 1,000, respectively.
+
+In both sets of rates, males have higher death rates regardless of
+adjustment, which may be indicative of social, economic, or health
+factors disproportionately affecting males vs. females. When comparing
+the un-adjusted rates to the adjusted rates, the un-adjusted rates are
+higher in comparison for both males and females, which might lead us to
+believe that while the total population is aging (more people live to
+old age), the likelihood of dying drops. This is interesting because it
+is consistent with the visualizations of Chile's population distribution
+and death rates earlier in the homework.
