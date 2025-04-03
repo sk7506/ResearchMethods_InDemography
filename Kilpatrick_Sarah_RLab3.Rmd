@@ -1,0 +1,883 @@
+---
+title: "CSDE 533 R Lab #3"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_knit$set(root.dir = paste0("~/Dropbox/Training/CSDE533/Wi25/",
+#                                        "Assignments/R/Lab 3"))
+# 
+# if(FALSE){
+#   setwd("~/Dropbox/Training/CSDE533/Wi25/Assignments/R/Lab 3/")
+# }
+```
+
+
+# **Problem 1:** Using `tidycensus` data - 50 points
+
+Install and load the package \texttt{tidycensus} into your \texttt{R} environment.
+
+```{r install_wpp2024, eval = TRUE, echo = FALSE}
+# install.packages("tidycensus")
+library(tidycensus)
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(bayesPop)
+library(apyramid)
+library(gridExtra)
+library(haven)
+library(survey)
+
+```
+
+```{r API setup, eval = TRUE, echo = FALSE}
+source("CensusAPIKey.R")
+census_api_key(key = myKey)
+# Sys.getenv("CENSUS_API_KEY")
+# To install your API key for use in future sessions, run this function with `install = TRUE`.
+# Doing this makes issues later on
+```
+
+Pick a county in the U.S. to explore:
+
+![The North Coast of Santa Cruz, California](/Users/sarahkilpatrick/Documents/CSDE 533 Labs/Wikipedia SC Image.jpg)
+
+I'm choosing Santa Cruz County, California. It is one of the oldest counties in California surrounded by the Pacific Ocean and the Santa Cruz Mountains. It is home to old-growth coastal redwoods and a wealth of biological diversity, protected by a variety of state parks. I grew up hiking and camping in these mountains, and my aunt and uncle live in Santa Cruz. 
+
+It is also known for its University of California - Santa Cruz (UCSC) Campus; the area has been experiencing growing pains in the past few decades, and there is a lack of housing for the mounting student body. There is a reluctance from non-student constituents to urbanize or create higher-density housing, causing a housing shortage for everyone.
+
+## **(a) 10 points**
+
+Present a table that includes a caption with the county's population count and total housing unit count in 2010 and 2020.
+
+With code provided by Jess Godwin from CSDE 533's 3rd R lab:
+
+```{r 1_a, eval=TRUE, echo=TRUE}
+get_census_data = function(year) {
+  #ITS P001001 IF IN 2010, P1_001N IF IN 2020
+  pop_var = ifelse(year == 2020, "P1_001N", "P001001")
+  hu_var = ifelse(year == 2020, "H1_001N", "H001001")
+  
+  #population data grabber 
+  pop_data <- get_decennial(geography = "county",
+                            variables = pop_var,
+                            year = year,
+                            sumfile = "pl",
+                            state = 06,
+                            county = 087,
+                            geometry = FALSE,
+                            key = myKey) %>%
+    rename(Population = value) %>%
+    select(GEOID, NAME, Population)
+
+  #housing units grabber
+  hu_data <- get_decennial(geography = "county",
+                           variables = hu_var,
+                           year = year,
+                           sumfile = "pl",
+                           state = 06,
+                           county = 087,
+                           geometry = FALSE,
+                           key = myKey) %>%
+    rename(Total_Housing_Units = value) %>%
+    select(GEOID, NAME, Total_Housing_Units)
+
+  # Merge both for the table
+  combined_data = left_join(pop_data, hu_data, by = c("GEOID", "NAME"))
+  # Add year column
+  combined_data$Year = year
+  return(combined_data)
+}
+
+# call fn for both sets
+data_2010 = get_census_data(2010)
+data_2020 = get_census_data(2020)
+
+final_table = bind_rows(data_2010, data_2020) %>%
+  select(Year, Population, Total_Housing_Units)
+
+kable(final_table, 
+      col.names = c("Year", "Population", "Total Housing Units"),
+      caption = "Santa Cruz County, California, Population & Housing Units (2010 vs. 2020)") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+
+```
+
+## **(b) 10 points**
+
+Under the assumption of exponential growth, calculate the growth rate $R$, for both population and housing units in your county of choice. Present the growth rates in a table with a caption and comment on the comparison between the two calculations.
+
+```{r 1_b}
+# Extract the population and housing data from final_table
+pop10 = final_table$Population[final_table$Year == 2010]
+pop20 = final_table$Population[final_table$Year == 2020]
+housing10 = final_table$Total_Housing_Units[final_table$Year == 2010]
+housing20 = final_table$Total_Housing_Units[final_table$Year == 2020]
+
+t = 10
+
+# Calculate exponential growth rates
+R_pop = (log(pop20) - log(pop10)) / t
+R_housing = (log(housing20) - log(housing10)) / t
+
+growth_table = data.frame(
+  Metric = c("Population Growth Rate", "Housing Unit Growth Rate"),
+  Growth_Rate = c(R_pop, R_housing)
+)
+
+kable(growth_table, 
+      col.names = c("", ""),
+      digits = 5,
+      caption = "Annual Exponential Growth Rates (2010 vs. 2020) in Santa Cruz County") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+```{r}
+## 2020 redistricting file
+decennial_red_vars <- load_variables(year = 2020, dataset = "pl")
+
+## 2020 Demographic & Housing Characteristics file
+decennial_dhc_vars <- load_variables(year = 2020, dataset = "dhc")
+
+## 2020 Demographic Profile file
+decennial_dp_vars <- load_variables(year = 2020, dataset = "dp")
+
+## ACS 5-year 2018-2022: for tracts
+acs5_2022_vars <- load_variables(year = 2022, dataset = "acs1")
+
+```
+
+## **(c) 10 points**  
+
+Using the American Community Survey, get the estimates of total population and housing units for your county between 2010-2023 in years that do not have a decennial Census. Create a two plots, one each for population and housing units, that contains years on the $x$-axis and population or housing unit totals on the $y$-axis. In years where data comes from ACS, add vertical error bars around the estimate point to represent the 90\% confidence interval.
+
+The population data lacks error bars because there are no margins of error, the ACS felt it had recorded the population accurately enough for this to not require MOE's. This will also be why the next part will have nulls in the CI width for the population column. The housing, however, contains margins or error, so that data is present.
+
+```{r reproducible function for getting acs data 1_c, eval=TRUE, echo=TRUE}
+# Function to get ACS estimates for total population and housing units
+get_acs_data <- function(year, table) {
+  get_acs(
+    geography = "county",
+    table = table,
+    year = year,
+    geometry = FALSE,
+    survey = "acs1",
+    state = 06,
+    county = 087
+  ) %>%
+    mutate(Year = year) %>%
+    relocate("Year", .after = "GEOID")
+}
+
+# Years to fetch data (excluding decennial Census years)
+acs_years = c(2011:2019, 2021, 2022)
+
+# Get population data
+pop_data_list = lapply(acs_years, get_acs_data, table = "B01001")
+pop_data = bind_rows(pop_data_list)
+
+# Get housing unit data
+housing_data_list = lapply(acs_years, get_acs_data, table = "B25001")
+housing_data = bind_rows(housing_data_list)
+```
+
+```{r create plots 1_c, eval=TRUE, echo=TRUE}
+
+pop_summary = pop_data %>%
+  group_by(Year) %>%
+  summarize(Population = sum(estimate), MOE = sqrt(sum(moe^2)))
+
+housing_summary = housing_data %>%
+  group_by(Year) %>%
+  summarize(HousingUnits = sum(estimate), MOE = sqrt(sum(moe^2)))
+
+# Plot population with error bars
+ggplot(pop_summary, aes(x = Year, y = Population)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = Population - MOE, ymax = Population + MOE), width = 0.2) +
+  scale_x_continuous(breaks = seq(min(acs_years), max(acs_years), by = 1)) +
+  labs(title = "King County Population Estimates (ACS 1-Year)",
+       x = "Year",
+       y = "Population") +
+  theme_minimal()
+
+# Plot housing units with error bars
+ggplot(housing_summary, aes(x = Year, y = HousingUnits)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = HousingUnits - MOE, ymax = HousingUnits + MOE), width = 0.2) +
+  scale_x_continuous(breaks = seq(min(acs_years), max(acs_years), by = 1)) +
+  labs(title = "King County Housing Unit Estimates (ACS 1-Year)",
+       x = "Year",
+       y = "Housing Units") +
+  theme_minimal()
+
+```
+
+## **(d) 10 points**
+
+Using the American Community Survey, get the estimates of total population and housing units for Census tracts within your county for two periods between 2010-2023.
+
+According to [this data dictionary,](https://www.geoplan.ufl.edu/agol/metadata/htm/cenacs_2013.htm)
+Total Population = B01003_001
+Housing Units = B25001_001
+
+```{r preprocessing population and housing tract data 1_d, eval=TRUE, echo=FALSE}
+# takes forever to run
+periods = list("2012-2016" = 2016, "2018-2022" = 2022)
+
+# Get data for population and housing units
+pop_data_list = lapply(periods, get_acs_data, table = "B01001")
+housing_data_list <- lapply(periods, get_acs_data, table = "B25001")
+
+pop_data = bind_rows(pop_data_list, .id = "Period")
+housing_data = bind_rows(housing_data_list, .id = "Period")
+
+pop_data = pop_data %>% 
+  filter(pop_data$variable == "B01001_001")
+
+```
+
+  1.  Calculate the mean 90% confidence interval width for each variable and time period across tracts, and present your calculations in a table.
+
+```{r calculating CI and displaying table 1_d, eval=TRUE, echo=FALSE}
+
+# Calculate standard error
+pop_data = pop_data %>% mutate(SE = moe / qnorm(0.95))
+housing_data = housing_data %>% mutate(SE = moe / qnorm(0.95))
+
+# Calculate mean 90% confidence interval width
+pop_summary = pop_data %>%
+  group_by(Period) %>%
+  summarize(Mean_CI_Width = mean(SE * qnorm(0.95) * 2, na.rm = TRUE)) %>%
+  mutate(Mean_CI_Width = replace_na(Mean_CI_Width, 0))
+
+housing_summary = housing_data %>%
+  group_by(Period) %>%
+  summarize(Mean_CI_Width = mean(SE * qnorm(0.95) * 2, na.rm = TRUE)) %>%
+  mutate(Mean_CI_Width = replace_na(Mean_CI_Width, 0))
+
+# Create summary table
+output_table = pop_summary %>%
+  rename(Population_Mean_CI_Width = Mean_CI_Width) %>%
+  left_join(housing_summary %>% rename(Housing_Mean_CI_Width = Mean_CI_Width), by = "Period")
+
+kable(output_table,
+      col.names = c("Period", "Population", "Housing"),
+      digits = 2,
+      caption = "Average CI Widths in ACS Tract Data; Santa Cruz County, CA") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+  2.  Comment on the comparison between the 90% CI widths for the county-level estimates and the tract-level mean 90% CI widths for each variable and time period.
+
+The county-level 90% CI widths are overall smaller than the tract-level mean CI widths, which means the ACS reported more precise housing unit estimates at the county level. The tract-level mean CI widths (1,280 for 2012-2016 and 432 for 2018-2022) are larger, reflecting more variability in individual tract estimates.
+
+The tract-level housing unit CI width decreased significantly from 2012-2016 to 2018-2022 (from 1,280 to 432). This could be because the ACS methods for assessment (data collection, statistical analysis) improved, which could have reduced the margins of error. 
+
+Overall, there is an increase in total housing units, though not by much, and a relatively slow exponential growth rate of 0.00177 for housing. 
+
+## **(e) 10 points** 
+
+Using the `load_variables` function, find a categorical variable in the ACS that is of interest to you that is not total housing units or total population. Report the estimate and 80\%, 90\%, and 95\% confidence intervals for this variable in a table whose caption accurately describes what the variable/estimate represents and for what period in time it applies.
+
+I chose this variable in row 367:
+B02001_008    Estimate!!Total:!!**Two or More Races**:    Race
+
+I am using the same years as before, 2010-2022, excluding years of the decennial census: 2010 and 2020.
+
+This is a specific enough variable to have margins of error. 
+
+```{r load two+ race data from acs 1_e, eval=TRUE, echo=TRUE}
+# Get ACS data for "total estimate two or more races"
+
+twoplus_raw <- lapply(acs_years, function(year) {
+  get_acs(
+    geography = "county",
+    variables = "B02001_008",
+    year = year,
+    state = "06",
+    county = "087",
+    survey = "acs1",
+    key = myKey
+  ) %>% mutate(Year = year)
+}) %>%
+  bind_rows() %>%
+  # reorders year first
+  select(Year, everything())
+
+# twoplus_raw
+```
+
+```{r, create 2+ race CI table 1_e, eval=TRUE, echo=TRUE}
+# Compute Confidence Intervals
+z_80 = qnorm(0.10, lower.tail = FALSE)  # 80% CI z-score
+z_90 = qnorm(0.05, lower.tail = FALSE)  # 90% CI z-score
+z_95 = qnorm(0.025, lower.tail = FALSE) # 95% CI z-score
+
+# twoplus_se_ci
+
+twoplus_se_ci = twoplus_raw %>%
+  mutate(
+    # Standard Error from 90% MOE
+    SE = moe / z_90,  
+    CI_80_Lower = estimate - z_80 * SE,
+    CI_80_Upper = estimate + z_80 * SE,
+    CI_90_Lower = estimate - z_90 * SE,
+    CI_90_Upper = estimate + z_90 * SE,
+    CI_95_Lower = estimate - z_95 * SE,
+    CI_95_Upper = estimate + z_95 * SE
+  ) %>%
+  select(Year, estimate, CI_80_Lower, CI_80_Upper, CI_90_Lower, CI_90_Upper, CI_95_Lower, CI_95_Upper)
+
+kable(twoplus_se_ci,
+    caption = "Population of Individuals Reporting 2 or More Races in Santa Cruz County, CA (ACS 1-Year Estimates)",
+    col.names = c("Year", "Estimate", "80% CI Lower", "80% CI Upper",
+                  "90% CI Lower", "90% CI Upper", "95% CI Lower", "95% CI Upper"),
+    digits = 0
+  ) %>%
+  kable_styling(font_size = 15, bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+
+```
+
+**Recall:** A confidence interval is constructed as $$\bar{x} \pm z_{(1-\alpha/2)} \times SE(\bar{x})$$ or $$\hat{p} \pm z_{(1-\alpha/2)} \times SE(\hat{p}),$$ where $\alpha = (100 - \mbox{confidence level})/100$ and $z_{1 - \alpha/2}$ can be calculated in `R` as below.
+
+# **Problem 2:** Population Pyramids - 25 points
+
+## **(a) 10 points**
+
+For your county selected in Problem 1, create a population pyramid using a method we went over in lab in each decennial census year 2010 and 2020. Comment on the general shapes of each plot and the changes, if any, between them.
+
+First, we must pre-process the data. The two decennial censuses have different variables to define the age groups, by sex. For example, the 2020 data dictionary can be found [here](https://api.census.gov/data/2020/dec/dhc/groups/P12.html). The 2010 data dictionary is the same except for the lacking underscore and "N" at the end.
+
+```{r preprocess 2010 census data 2_a, eval=TRUE, echo=TRUE}
+
+p12_vars_2010 = c("P012003", "P012004", "P012005", "P012006", "P012007", "P012008", "P012009",
+  "P012010", "P012011", "P012012", "P012013", "P012014", "P012015", "P012016",
+  "P012017", "P012018", "P012019", "P012020", "P012021", "P012022", "P012023",
+  "P012024", "P012025", "P012027", "P012028", "P012029", "P012030", "P012031",
+  "P012032", "P012033", "P012034", "P012035", "P012036", "P012037", "P012038",
+  "P012039", "P012040", "P012041", "P012042", "P012043", "P012044", "P012045",
+  "P012046", "P012047", "P012048", "P012049"
+)
+
+sc_age_sex_2010 = get_decennial(
+  geography = "county",
+  variables = p12_vars_2010,
+  year = 2010,
+  sumfile = "sf1",
+  state = "06",
+  county = "087",
+  geometry = FALSE,
+  key = myKey
+)
+
+sc_age_sex_2010$value = as.numeric(sc_age_sex_2010$value)
+
+sc_agebysex_2010 = sc_age_sex_2010 %>%
+  # Filter for relevant P12 variables (Male: P012003-P012025, Female: P012027-P012049)
+  filter(variable %in% p12_vars_2010) %>%
+  mutate(
+    # Assign Male/Female based on variable codes
+    Sex = ifelse(as.numeric(substr(variable, 6, 8)) <= 25, "Male", "Female"),
+    
+    # Assign Age Groups
+    Age_Group = case_when(
+      variable %in% c("P012003", "P012027") ~ "0-4",
+      variable %in% c("P012004", "P012028") ~ "5-9",
+      variable %in% c("P012005", "P012029") ~ "10-14",
+      variable %in% c("P012006", "P012007", "P012030", "P012031") ~ "15-19",
+      variable %in% c("P012008", "P012009", "P012010", "P012032", "P012033", "P012034") ~ "20-24",
+      variable %in% c("P012011", "P012035") ~ "25-29",
+      variable %in% c("P012012", "P012036") ~ "30-34",
+      variable %in% c("P012013", "P012037") ~ "35-39",
+      variable %in% c("P012014", "P012038") ~ "40-44",
+      variable %in% c("P012015", "P012039") ~ "45-49",
+      variable %in% c("P012016", "P012040") ~ "50-54",
+      variable %in% c("P012017", "P012041") ~ "55-59",
+      variable %in% c("P012018", "P012019", "P012042", "P012043") ~ "60-64",
+      variable %in% c("P012020", "P012021", "P012044", "P012045") ~ "65-69",
+      variable %in% c("P012022", "P012046") ~ "70-74",
+      variable %in% c("P012023", "P012047") ~ "75-79",
+      variable %in% c("P012024", "P012048") ~ "80-84",
+      variable %in% c("P012025", "P012049") ~ "85+",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  # Group by Age Group and Sex
+  group_by(Age_Group, Sex) %>%
+  summarise(Total_Population = sum(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Age_Group = factor(Age_Group, levels = c(
+    "0-4", "5-9", "10-14", "15-19", "20-24", "25-29", 
+    "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", 
+    "60-64", "65-69", "70-74", "75-79", "80-84", "85+"
+  ))) %>%
+  arrange(Age_Group, Sex)
+
+# sc_agebysex_2010
+```
+
+
+```{r preprocess 2020 census data 2_a, eval=TRUE, echo=TRUE}
+
+p12_vars_2020 = c(
+  "P12_003N", "P12_004N", "P12_005N", "P12_006N", "P12_007N", 
+  "P12_008N", "P12_009N", "P12_010N", "P12_011N", "P12_012N",
+  "P12_013N", "P12_014N", "P12_015N", "P12_016N", "P12_017N",
+  "P12_018N", "P12_019N", "P12_020N", "P12_021N", "P12_022N",
+  "P12_023N", "P12_024N", "P12_025N", "P12_027N", "P12_028N",
+  "P12_029N", "P12_030N", "P12_031N", "P12_032N", "P12_033N",
+  "P12_034N", "P12_035N", "P12_036N", "P12_037N", "P12_038N",
+  "P12_039N", "P12_040N", "P12_041N", "P12_042N", "P12_043N",
+  "P12_044N", "P12_045N", "P12_046N", "P12_047N", "P12_048N",
+  "P12_049N"
+)
+
+sc_age_sex_2020 = get_decennial(
+  geography = "county",
+  variables = p12_vars_2020,
+  year = 2020,
+  sumfile = "dhc",  # DHC is the SF1 equivalent in 2020
+  state = "06",
+  county = "087",
+  geometry = FALSE,
+  key = myKey
+)
+
+# Process the 2020 Census Age-Sex Data
+sc_agebysex_2020 = sc_age_sex_2020 %>%
+  # Filter for relevant P12 variables (Male: P12_003N-P12_025N, Female: P12_027N-P12_049N)
+  filter(variable %in% p12_vars_2020) %>%
+  mutate(
+    # Assign Male/Female based on variable codes
+    Sex = ifelse(as.numeric(substr(variable, 5, 7)) <= 25, "Male", "Female"),
+    
+    # Assign Age Groups
+    Age_Group = case_when(
+      variable %in% c("P12_003N", "P12_027N") ~ "0-4",
+      variable %in% c("P12_004N", "P12_028N") ~ "5-9",
+      variable %in% c("P12_005N", "P12_029N") ~ "10-14",
+      variable %in% c("P12_006N", "P12_007N", "P12_030N", "P12_031N") ~ "15-19",
+      variable %in% c("P12_008N", "P12_009N", "P12_010N", "P12_032N", "P12_033N", "P12_034N") ~ "20-24",
+      variable %in% c("P12_011N", "P12_035N") ~ "25-29",
+      variable %in% c("P12_012N", "P12_036N") ~ "30-34",
+      variable %in% c("P12_013N", "P12_037N") ~ "35-39",
+      variable %in% c("P12_014N", "P12_038N") ~ "40-44",
+      variable %in% c("P12_015N", "P12_039N") ~ "45-49",
+      variable %in% c("P12_016N", "P12_040N") ~ "50-54",
+      variable %in% c("P12_017N", "P12_041N") ~ "55-59",
+      variable %in% c("P12_018N", "P12_019N", "P12_042N", "P12_043N") ~ "60-64",
+      variable %in% c("P12_020N", "P12_021N", "P12_044N", "P12_045N") ~ "65-69",
+      variable %in% c("P12_022N", "P12_046N") ~ "70-74",
+      variable %in% c("P12_023N", "P12_047N") ~ "75-79",
+      variable %in% c("P12_024N", "P12_048N") ~ "80-84",
+      variable %in% c("P12_025N", "P12_049N") ~ "85+",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  # Group by Age Group and Sex
+  group_by(Age_Group, Sex) %>%
+  summarise(Total_Population = sum(value, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Age_Group = factor(Age_Group, levels = c(
+    "0-4", "5-9", "10-14", "15-19", "20-24", "25-29", 
+    "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", 
+    "60-64", "65-69", "70-74", "75-79", "80-84", "85+"
+  ))) %>%
+  arrange(Age_Group, Sex)
+
+# sc_agebysex_2020
+
+```
+
+**Males = blue**
+**Females = purple.**
+
+```{r plot 2010 + 2020 population pyramid 2_a, eval=TRUE, echo=TRUE}
+      
+sc_agebysex_2010 = sc_agebysex_2010 %>%
+  mutate(Pop_plot = ifelse(Sex == "Male", -Total_Population, Total_Population))
+
+sc_agebysex_2020 = sc_agebysex_2020 %>%
+  mutate(Pop_plot = ifelse(Sex == "Male", -Total_Population, Total_Population))
+
+pyramid_plot = function(data, year) {
+  ggplot(data, aes(x = Age_Group, y = Pop_plot, fill = Sex)) +
+    geom_bar(stat = "identity") +
+    scale_y_continuous(
+      labels = abs,
+      breaks = seq(-12000, 12000, by = 3000)) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 10),
+      legend.title = element_blank()
+    ) +
+    labs(
+      x = "Age Group", y = "Population",
+      fill = "Sex", title = paste("Santa Cruz County Population Pyramid (", year, ")", sep = "")
+    ) +
+    scale_fill_manual(values = c("Male" = "steelblue", "Female" = "slateblue"))
+}
+
+pyramid_2010 = pyramid_plot(sc_agebysex_2010, "2010") + theme(legend.position = "none")
+pyramid_2020 = pyramid_plot(sc_agebysex_2020, "2020")  + theme(legend.position = "none")
+
+grid.arrange(arrangeGrob(pyramid_2010, pyramid_2020, ncol = 2))
+
+```
+
+Both the 2010 and 2020 pyramids show the bump of college-age individuals (18-24) for both male and female populations due to the university campus in Santa Cruz. 
+
+Overall, in 2010 the male population consistently outnumbered the female population across most age groups. The largest gaps were in the 20-24 and 25-29 age groups. By 2020, the male-to-female ratio is slightly more balanced, with smaller differences between the sexes in the older age groups.
+
+It is also apparent between 2010 and 2020 that most residents stayed in Santa Cruz, as the bumps in population clustered around the 50-54 and 55-60 age groups aged into the 60-64 and 65-70 age groups in the 2020 census. Additionally, the 2020 census data shows more people have joined Santa Cruz across all age groups, which can mean people are moving in. 
+
+The squeeze in the middle-aged workforce population can be attributed partly to Santa Cruz's hesitance to urbanizing. From personal experience, many in the SC workforce commute into the county from surrounding areas: Santa Clara County, San Mateo County, and Monterey County being some of the most densely populated in the state of California, which all direct neighbors to SC.
+
+## **(b) 10 points** 
+
+For your county selected in Problem 2, create a population pyramid using a method we went over in lab in 2023.
+
+This is how to read the variables for acs:
+001: Total Population
+002: Total Male Population
+003 - 025: Male Age Groups
+026: Total Female Population
+027 - 049: Female Age Groups
+
+```{r preprocess 2023 age groups by sex 2_b, eval=TRUE, echo=TRUE}
+
+sc_raw2023 = get_acs(geography = "county",
+                   table = "B01001", # Pop by sex & age
+                   year = 2023,
+                   geometry = FALSE,
+                   survey = "acs1",
+                   state = 06,
+                   county = 087,
+                   key = myKey)
+
+sc_agebysex2023 = sc_raw2023 %>%
+                                          # Male Age Groups
+  filter(variable %in% c(paste0("B01001_", sprintf("%03d", 3:25)),
+                                          # Female Age Groups
+                         paste0("B01001_", sprintf("%03d", 27:49)))) %>%
+  mutate(
+    # assign Male/Female based on variable codes
+    Sex = ifelse(as.numeric(substr(variable, 8, 10)) <= 25, "Male", "Female"),
+    Age_Group = case_when(
+      variable %in% c("B01001_003", "B01001_027") ~ "0-4",
+      variable %in% c("B01001_004", "B01001_028") ~ "5-9",
+      variable %in% c("B01001_005", "B01001_029") ~ "10-14",
+      variable %in% c("B01001_006", "B01001_007", "B01001_030", "B01001_031") ~ "15-19",
+      variable %in% c("B01001_008", "B01001_009", "B01001_010", "B01001_032", "B01001_033", "B01001_034") ~ "20-24",
+      variable %in% c("B01001_011", "B01001_035") ~ "25-29",
+      variable %in% c("B01001_012", "B01001_036") ~ "30-34",
+      variable %in% c("B01001_013", "B01001_037") ~ "35-39",
+      variable %in% c("B01001_014", "B01001_038") ~ "40-44",
+      variable %in% c("B01001_015", "B01001_039") ~ "45-49",
+      variable %in% c("B01001_016", "B01001_040") ~ "50-54",
+      variable %in% c("B01001_017", "B01001_041") ~ "55-59",
+      variable %in% c("B01001_018", "B01001_019", "B01001_042", "B01001_043") ~ "60-64",
+      variable %in% c("B01001_020", "B01001_021", "B01001_044", "B01001_045") ~ "65-69",
+      variable %in% c("B01001_022", "B01001_046") ~ "70-74",
+      variable %in% c("B01001_023", "B01001_047") ~ "75-79",
+      variable %in% c("B01001_024", "B01001_048") ~ "80-84",
+      variable %in% c("B01001_025", "B01001_049") ~ "85+",
+      TRUE ~ "Unknown"
+    )
+  ) %>%
+  # Group by Age Group and Sex
+  group_by(Age_Group, Sex) %>%
+
+  summarise(
+    Total_Population = sum(estimate, na.rm = TRUE), 
+    Total_MOE = sqrt(sum(moe^2, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  # summarise(Total_Population = sum(estimate, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Age_Group = factor(Age_Group, levels = c(
+    "0-4", "5-9", "10-14", "15-19", "20-24", "25-29", 
+    "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", 
+    "60-64", "65-69", "70-74", "75-79", "80-84", "85+"
+  ))) %>%
+  arrange(Age_Group, Sex)
+
+# sc_agebysex2023
+```
+
+```{r plot 2023 pop pyramid 2_b, eval=TRUE, echo=TRUE}
+sc_agebysex2023 = sc_agebysex2023 %>%
+  mutate(Pop_plot = ifelse(Sex == "Male", -Total_Population, Total_Population))
+
+pyramid_2023 = pyramid_plot(sc_agebysex2023, "2023") + theme(legend.position = "none")
+
+grid.arrange(arrangeGrob(pyramid_2020, pyramid_2023, ncol = 2))
+
+```
+
+This comparison between the 2020 and 2023 population compositions of Santa Cruz show a very small decline in the youngest ages, from years 0-4 and 5-9. This could possibly point to a drop in birth rates in Santa Cruz County.
+
+The college-age population remains similar; if anything, it has gone up over time. This shows that there will always be at least some demand for housing in the area, even if other age groups decline. 
+
+The old-age demographic has also increased over time, but the oldest age group (85+) has decreased for both males and females.
+
+## **(c) 5 points**
+
+In any way you can think of, display the bounds of the 90% confidence intervals on the age-specific population estimates in (b) within the population pyramid figure. This could be adding error bars or additional bars to the existing plot, or expanding the figure to a multi-panel figure.
+
+```{r 2_c}
+pyramid_plot = function(data, year) {
+  ggplot(data, aes(x = Age_Group, y = Pop_plot, fill = Sex)) +
+    geom_bar(stat = "identity") +  # Main bars
+    geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.4, color = "gray1") +
+    scale_y_continuous(labels = abs,
+                       breaks = c(-12000, -9000, -6000, -3000, 0, 3000, 6000, 9000, 12000)) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 10),
+      legend.title = element_blank()
+    ) +
+    labs(
+      x = "Age Group", y = "Population",
+      fill = "Sex", title = paste("Santa Cruz County Population Pyramid (", year, ")", sep = "")
+    ) +
+    scale_fill_manual(values = c("Male" = "steelblue", "Female" = "slateblue"))
+}
+
+sc_agebysex2023 = sc_agebysex2023 %>%
+  mutate(
+    Pop_plot = ifelse(Sex == "Male", -Total_Population, Total_Population),
+    Lower_CI = ifelse(Sex == "Male", -(Total_Population - 1.645 * Total_MOE), Total_Population - 1.645 * Total_MOE),
+    Upper_CI = ifelse(Sex == "Male", -(Total_Population + 1.645 * Total_MOE), Total_Population + 1.645 * Total_MOE)
+  )
+
+# Generate the updated population pyramid plot with confidence intervals
+pyramid_2023 = pyramid_plot(sc_agebysex2023, "2023")
+pyramid_2023
+```
+
+# **Problem 3:** Using DHS data - 25 points
+Apply for DHS approval for a single country and topic of your choice, and download the data for a single survey.
+
+## **(a) 5 points** 
+
+Read through the appendix on sampling design in the Final Report for your country and survey year. Summarize the sampling description, i.e. what are the strata and the clusters? who within a household is interviewed in the survey? were urban or rural areas oversampled?
+
+This problem will use the [DHS Program model datasets](https://dhsprogram.com/data/Download-Model-Datasets.cfm?flag=1). Going from the Model Datasets Full Report Tables and Sampling Errors (English and French), the **Sample Design pdf** (named zzfulltables.zip) contains information for sample implementation for women and men, the coverage of HIV testing from social characteristics/demographics for women and men, and the coverage of HIV testing from sexual behavior for women and men. 
+
+*Sampling Design:* Overall, the sampling design separates households and elegible individuals by residence (urban, rural) and region (1-4). The selected households retain a status, whether the individuals completed the interview, whether no such interview could be completed, etc., or even if the dwelling exists/is vacant.
+
+*Source:* This data comes from model DHS 6 data. 
+*Strata:* Individuals are separated by sex and residence (urban, rural), and whether they provided blood for HIV testing.
+*Clusters:* The respondents are also grouped by marital status, type of union, status of sexual intercourse, status of pregnancy, time slept away/time away from home in last 12 months, ethnic group, and religion.
+
+They are further separated by age at first sexual intercourse, number/concurrency of current/lifetime sexual partners, condom use, and prior HIV testing. 
+Who within a household is interviewed?
+
+*Were urban/rural areas oversampled?*
+For both women and men rural households were sampled about twice as much as urban households. The household response rates for both sexes was above 98%.
+
+## **(b) 5 points**
+
+Using the Individual Recode (IR) file, create a barplot of the number of women interviewed by their birth cohort and whether their households are in urban or rural areas where the color of the bars represents urban/rural status.
+
+According to the [DHS 6 Recode Manual](https://www.dhsprogram.com/pubs/pdf/DHSG4/Recode6_DHS_22March2013_DHSG4.pdf), all variables beginning with "v" are for women respondents. Men's responses are from variables beginning with "mv". Therefore there is no need to filter for sex before beginning. See Section W01 (page 33) and Section M01 (page 118) for more information.
+
+```{r preprocess IR data 3_b, eval=TRUE, echo=TRUE}
+# v010 - Year of birth of respondent (see note on imputed dates) 
+# v011 - Century month code of date of birth of the respondent (see note on century month codes). 
+# v015 - Result of individual interview. Code 1 represents a completed interview. For all other cases, only REC01 will exist in the data file. For flat format data files, cases with a result code different than 1 are dropped from the file. 
+# v025 - whether the surveyed household was stratified as urban or rural; 1 is "urban" and 2 is "rural"
+
+ir_file = read_dta("/Users/sarahkilpatrick/Documents/CSDE 533 Labs/ZZIR62FL.DTA") %>%
+  select(caseid, v010, v011, v015, v025) %>% 
+  # completed interviews only
+  filter(v015 == 1)
+
+# urban residence
+urban_ir_file = ir_file %>% 
+  filter(v025 == 1)
+
+#rural residence
+urban_ir_file = ir_file %>% 
+  filter(v025 == 2)
+```
+
+```{r plotting IR data 3_b, eval=TRUE, echo=TRUE}
+ir_file = ir_file %>%
+  mutate(Residence = ifelse(v025 == 1, "Urban", "Rural"))
+
+ggplot(ir_file, aes(x = as.factor(v010), fill = Residence)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Number of Women by Birth Cohort and Residence",
+       x = "Birth Year",
+       y = "Number of Respondents",
+       fill = "Residence Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = c("Urban" = "cornflowerblue", "Rural" = "darkseagreen"))
+```
+
+## **(c) 5 points**
+
+Select a variable of interest to you in the Individual Recode file (IR) from the Recode Manual. Report the variable name in the file, what the survey question was in English, and the possible responses.
+
+For the purposes of the model data, the sample survey question was in English. 
+
+**Variable:**
+- *v113* Major source of drinking water for members of the household. Individual codes are country specific, but the major categories are standard. 
+
+I considered the following before choosing: 
+- *v113* Major source of drinking water for members of the household. Individual codes are country specific, but the major categories are standard. 
+- *v116* Type of toilet facility in the household. Individual codes are country-specific, but the major categories are standard.
+- *v120* whether household has a radio
+- *V149* Educational achievement recodes the education of the respondent into the following categories: None, incomplete primary, complete primary, incomplete secondary, complete secondary, higher education.
+
+```{r 3_c}
+ir_file_var = read_dta("/Users/sarahkilpatrick/Documents/CSDE 533 Labs/ZZIR62FL.DTA") %>%
+  select(caseid, v001, v002, v005, v010, v015, v024, v025, v113) %>% 
+  # completed interviews only
+  filter(v015 == 1)
+
+# attr(ir_file_var$v113, "labels")
+# ir_file_var
+```
+
+**Possible Outcomes - Water Source variable v113**
+
+piped water: 10 
+piped into dwelling: 11 
+piped to yard/plot: 12 
+public tap/standpipe: 13 
+tube well water: 20 
+tube well or borehole: 21 
+dug well (open/protected): 30 
+protected well: 31 
+unprotected well: 32 
+surface water: 40 
+protected spring: 41 
+unprotected spring: 42 
+river/dam/lake/ponds/stream/canal/irrigation channel: 43 
+rainwater: 51 
+tanker truck: 61 
+cart with small tank: 62 
+bottled water or sachets: 71 
+other: 96 
+not a dejure resident: 97 
+                                                  
+## **(d) 10 points**
+
+Calculate the mean prevalence of each outcome to your variable of choice within the sample. Then, use the following code to calculate the proper prevalence estimates for the population that account for the survey design. Present both calculations in a table, comment on the differences you see.
+
+```{r calculates mean prevalence 3_d, eval=TRUE, echo=TRUE}
+
+# unique_values <- unique(ir_file_var$v113)
+# print(unique_values)
+
+water_prevalence = ir_file_var %>%
+  group_by(v113) %>%
+  summarise(
+    count = n(),
+    # converts to percentage
+    prevalence = round((count / nrow(ir_file_var)) * 100, 4)
+  ) %>%
+  # sorts by highest prevalence
+  arrange(desc(prevalence))
+
+```
+
+```{r calculates proper prevalence accounting for survey 3_d, eval=TRUE, echo=TRUE}
+
+ir_file_var = ir_file_var %>% filter(!is.na(v005) & !is.na(v113))
+ir_file_var$v113 = as.factor(ir_file_var$v113)
+
+ir_file_var$v005 <- ir_file_var$v005 / 1e6
+
+mysvy_des <- svydesign(
+  ids = ~v001 + v002,  
+  strata = ~v024 + v025,  
+  weights = ~v005,  
+  data = ir_file_var
+)
+
+proper_prevalence = svymean(~v113, design = mysvy_des, na.rm = TRUE)
+
+# Convert weighted prevalence to a dataframe
+proper_df = data.frame(
+  v113 = names(proper_prevalence),
+  # Convert to percentage
+  proper_prevalence = as.numeric(proper_prevalence) * 100
+)
+
+```
+
+```{r clean mean/proper prevalences table 3_d, eval=TRUE, echo=TRUE}
+
+proper_df$v113 = gsub("^v113", "", proper_df$v113)
+
+# merge both by 'Water Source'
+comparison_table = merge(water_prevalence, proper_df, by = "v113", all = TRUE)
+
+colnames(comparison_table) = c("Water_Source", "Responder_Count", "Mean_Prevalence_Percentage", "Proper_Prevalence_Percentage")
+
+```
+
+```{r present comparison table 3_d, eval=TRUE, echo=TRUE}
+# str(comparison_table$Water_Source)
+
+water_labels <- c(
+  "10" = "Piped water",
+  "11" = "Piped into dwelling",
+  "12" = "Piped to yard/plot",
+  "13" = "Public tap/standpipe",
+  "20" = "Tube well water",
+  "21" = "Tube well or borehole",
+  "30" = "Dug well (open/protected)",
+  "31" = "Protected well",
+  "32" = "Unprotected well",
+  "40" = "Surface water",
+  "41" = "Protected spring",
+  "42" = "Unprotected spring",
+  "43" = "River/dam/lake/pond/stream/canal/irrigation channel",
+  "51" = "Rainwater",
+  "61" = "Tanker truck",
+  "62" = "Cart with small tank",
+  "71" = "Bottled water or sachets",
+  "96" = "Other",
+  "97" = "Not a de jure resident"
+)
+
+comparison_table <- comparison_table %>%
+  mutate(Water_Source = as.character(Water_Source)) %>%  # Convert factor to character
+  mutate(Water_Source = water_labels[Water_Source])  # Map values using water_labels
+
+kable(comparison_table, 
+      col.names = c("DHS-Provided Water Source", "Total Count", "Mean Prevalence (In % of Total", "Proper Prevalence Adjusted for Survey Design (In % of Total)"),
+      digits = 2,
+      caption = "Mean vs. Proper Prevalence of Water-Source Outcomes from DHS-Provided Sample") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+

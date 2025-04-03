@@ -1,0 +1,1020 @@
+---
+title: "SOC/CSSS/CSDE 533 Lab 2"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+  pdf_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, echo= FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_knit$set(root.dir = paste0("~/Dropbox/Training/CSDE533/Wi25/",
+#                                        "Assignments/R/Lab 2"))
+```
+
+# Problem 1: Data and Scatterplots - 50 points
+
+*Install and load the package `wpp2024` into your `R` environment.*
+
+```{r install_wpp2024, eval = TRUE, echo= FALSE}
+options(repos = c(CRAN = "https://cran.rstudio.com"))
+library(devtools)
+options(timeout = 600)
+# install_github("PPgp/wpp2024")
+library(wpp2024)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+
+```
+
+*Load the datasets `e0F1` and `e0M1`. Note:* $e_0$ *is demographic
+notation for life expectancy at birth, or how many years, on average, a
+person from a specific population can expect to live. These estimates
+are typically made separately for two sex categories: male and female,
+as there is a known gap between male and female life expectancy.*
+
+```{r p1 setup, eval=TRUE, echo=TRUE}
+data(`e0F1`)
+data(`e0M1`)
+```
+
+***(a)5 points** Use several functions we've discussed to 'get to know
+your data'. HINT: don't forget to use the help documentation for the
+datasets/package.*
+
+1.  *Who published these life expectancy estimates? When were they
+    published?*
+
+Reference: World Population Prospects: The 2024 Revision.
+<http://population.un.org/wpp>
+
+Details: These data come from the United Nations' annual and 5-year time
+series of the life expectancy at birth (e0) for all countries of the
+world as available in 2024.
+
+"These datasets are based on estimates and projections of United
+Nations, Department of Economic and Social Affairs, Population Division
+(2024). The pre-1950 datasets and the 5-year datasets were compiled by
+Patrick Gerland."
+
+```{r problem 1 part a, eval=TRUE, echo=FALSE}
+# summary(e0F1)
+# summary(e0M1)
+# head(e0F1)
+# head(e0M1)
+#colnames(e0F1)
+?e0F1
+```
+
+2.  *What class of object is the second column of `e0F1`?*
+
+The second column of `e0F1` is a character column called 'name'.
+
+3.  *What is the range of female and male life expectancy for the 2023
+    time period? Present your results in a table.*
+
+```{r problem 1 part a question 3, eval=TRUE, echo=TRUE}
+output = data.frame(
+  Gender = c("Female", "Male"),
+  Min_Life_Expectancy = c(min(e0F1$`2023`, na.rm = TRUE), min(e0M1$`2023`, na.rm = TRUE)),
+  Max_Life_Expectancy = c(max(e0F1$`2023`, na.rm = TRUE), max(e0M1$`2023`, na.rm = TRUE))
+)
+
+kable(output, 
+      col.names = c("Gender", "Minimum Life Expectancy in Years", "Maximum Life Expectancy in Years"),
+      digits = 2,
+      caption = "Range of Female/Male Life Expectancy in 2023") %>%
+  kable_styling(
+    font_size = 15
+  )
+```
+
+***(c)10 points** Pick a country of your choice and plot both male and
+female life expectancy against time.*
+
+Pivot the data:
+
+```{r problem 1 part c 1, eval=TRUE, echo=FALSE}
+# paraguay is country code = 600
+paraguay_rawfdata = e0F1[e0F1$country_code == 600, ]
+paraguay_rawmdata = e0M1[e0M1$country_code == 600, ]
+
+paraguay_long_female <- paraguay_rawfdata %>%
+  pivot_longer(cols = `1950`:`2023`,
+               names_to = "Year", #new column
+               #where the old columns' values are now going 
+               values_to = "e_0") %>% 
+  select(-name, -country_code)
+
+paraguay_long_male <- paraguay_rawmdata %>%
+  pivot_longer(cols = `1950`:`2023`,
+               names_to = "Year", 
+               values_to = "e_0") %>% 
+  select(-name, -country_code)
+
+# paraguay_long_female
+# paraguay_long_male
+
+```
+
+Join the data for plotting and later use:
+
+```{r problem 1 part c 2, eval=TRUE, echo=TRUE}
+
+paraguay_long_female = paraguay_long_female %>%
+  mutate(Gender = "Female")
+paraguay_long_male = paraguay_long_male %>%
+  mutate(Gender = "Male")
+
+joined_paraguay_data = bind_rows(paraguay_long_female, paraguay_long_male)
+
+joined_paraguay_data$Year = as.numeric(joined_paraguay_data$Year)
+
+```
+
+Plot the data:
+
+```{r problem 1 part c 3, eval=TRUE, echo=TRUE}
+ggplot(joined_paraguay_data, aes(x = Year, y = e_0, color = Gender)) +
+  geom_line(linewidth = 1) +
+  ggtitle("Female and Male Life Expectancy\nin Paraguay (1950-2023)") +
+  xlab("Year") +
+  ylab("Life Expectancy") +
+  scale_color_manual(values = c("goldenrod", "seagreen")) +
+  scale_x_continuous(breaks = seq(min(joined_paraguay_data$Year), max(joined_paraguay_data$Year), by = 5)) +
+geom_vline(xintercept = 2021, linetype = "dashed", color = "red", linewidth = 0.5) +
+theme_minimal() +
+theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 10),
+    legend.title = element_blank()
+  )
+```
+
+There's a sharp drop in 2021 marked with a red dashed line. This was
+likely due to the COVID-19 pandemic. Paraguay's response to the pandemic
+in 2020 and 2021 was to focus on sanitation, exposure tracking, and a
+multi-phase return to school/work plan beginning in October 2020.
+
+Even with the onset of vaccinations in early 2021, that year experienced
+the maximum amount of deaths and infections between 2020 and when they
+stopped tracking this information in March of 2022. This information was
+found through the [Paraguayan Government's Department of Public Health
+and Wellness](https://www.mspbs.gov.py/index.php).
+
+1.  *Use a combination of `plot` and `points` to make a scatterplot of*
+    $e_0$ *versus time. Use either distinct symbols OR distinct colors
+    for each sex, and include a legend. Use the axis labels and title to
+    correctly annotate your plot.*
+
+```{r paraguay plot and points, eval=TRUE, echo=TRUE}
+
+plot(joined_paraguay_data$Year, joined_paraguay_data$e_0, 
+     type = "n",  
+     xlab = "Year", ylab = "Life Expectancy", 
+     main = "Female and Male Life Expectancy in Paraguay (1950-2023)",
+     xaxt = "n", 
+     xlim = c(min(joined_paraguay_data$Year), max(joined_paraguay_data$Year)),
+     ylim = c(min(joined_paraguay_data$e_0), max(joined_paraguay_data$e_0)))
+
+points(joined_paraguay_data$Year[joined_paraguay_data$Gender == "Female"], 
+       joined_paraguay_data$e_0[joined_paraguay_data$Gender == "Female"], 
+       col = "goldenrod", pch = 19)  
+
+points(joined_paraguay_data$Year[joined_paraguay_data$Gender == "Male"], 
+       joined_paraguay_data$e_0[joined_paraguay_data$Gender == "Male"], 
+       col = "seagreen", pch = 19)  
+
+# Dashed red line at x = 2021
+abline(v = 2021, col = "red", lty = 2, lwd = 1) 
+
+axis(1, at = seq(min(joined_paraguay_data$Year), max(joined_paraguay_data$Year), by = 5))
+
+# Legend
+legend("topleft", legend = c("Female", "Male"), 
+       col = c("goldenrod", "seagreen"), bty = "n")
+
+
+```
+
+2.  *Use `?lines` or `help("lines")` to look up the documentation for
+    the function `lines`. Use a combination of `plot` and `lines` to
+    plot the male and female life expectancies from your country of
+    choice. (Your plot should not contain individual points, but two
+    distinct lines.) Use either color or line type to distinguish
+    between the series for each sex. Include a legend and appropriate
+    axis labels and a main title. Save this plot as a .pdf.*
+
+```{r lines, eval=FALSE, echo=TRUE}
+?lines
+```
+
+Save the PDF:
+
+```{r paraguay female e0 base R to PDF, eval=TRUE, echo=TRUE}
+# # Save the plot as a PDF
+# pdf("paraguay_e0_lines.pdf", 
+#     width = 6, height = 6)
+
+plot(paraguay_long_female$Year, paraguay_long_female$e_0, 
+     type = "l", 
+     col = "goldenrod", 
+     lwd = 2, 
+     xlab = "Year", 
+     ylab = "Life Expectancy (Years)", 
+     main = "Life Expectancy at Birth in Paraguay (1950-2023)",
+     ylim = range(min(paraguay_long_male$e_0), max(paraguay_long_female$e_0)))
+
+#grid lines
+grid(nx = NULL, ny = NULL, col = "lightgray")
+
+lines(paraguay_long_male$Year, paraguay_long_male$e_0,
+      col = "seagreen", 
+      lwd = 2)
+
+legend("bottomright", 
+       legend = c("Female", "Male"), 
+       col = c("goldenrod", "seagreen"), 
+       lwd = 2)
+
+dev.off() #turn off graphical device function off
+```
+
+Plot the lines
+
+```{r paraguay female e0 base R, eval=TRUE, echo=TRUE}
+plot(paraguay_long_female$Year, paraguay_long_female$e_0, 
+     type = "l", 
+     col = "goldenrod", 
+     lwd = 2, 
+     xlab = "Year", 
+     ylab = "Life Expectancy (Years)", 
+     main = "Life Expectancy at Birth in Paraguay (1950-2023)",
+     ylim = range(min(paraguay_long_male$e_0), max(paraguay_long_female$e_0)))
+
+#grid lines
+grid(nx = NULL, ny = NULL, col = "lightgray")
+
+lines(paraguay_long_male$Year, paraguay_long_male$e_0,
+      col = "seagreen", 
+      lwd = 2)
+
+legend("bottomright", 
+       legend = c("Female", "Male"), 
+       col = c("goldenrod", "seagreen"), 
+       lwd = 2)
+```
+
+***(d)20 points** Create a new data frame called `plot_data` by
+subsetting `e0F1` and selecting 4 countries and the row whose
+`country_code == 900` and `name = "World"`.*
+
+I am choosing the 4 countries that had the highest frequency of tropical
+cyclones in 2024. These rankings vary by source but [this
+article](https://www.newsweek.com/map-shows-which-countries-get-most-hurricanes-1965603)
+was reported by Newsweek, provided by the Weather Channel.
+
+1.  China
+2.  Philippines
+3.  Japan
+4.  Mexico
+
+```{r filter cyclone countries, eval=TRUE, echo=FALSE}
+plot_data = e0F1 %>%
+  filter(country_code %in% c(156, 608, 392, 484, 900))
+
+kable(plot_data, digits = 2) %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+1.  *Convert your new data.frame from **wide** format (one row per
+    country) to **long** format (a row for every country/year period).
+    In `tidyr` this is done using `pivot_longer`. In base R this is done
+    using `reshape`. Use both `pivot_longer` and `reshape`.*
+
+```{r pivot cyclone data long, eval=TRUE, echo=TRUE}
+
+cyclone_data_long <- plot_data %>%
+  pivot_longer(
+    # Specify the columns from years 1951 to 2023
+    cols = `1950`:`2023`, 
+    # name of new SINGLE column for year from MANY columns
+    names_to = "Year", 
+    # name of new column for life expectancy values
+    values_to = "e_0"      
+  )
+
+kable(cyclone_data_long, 
+      col.names = c("Country Code", "Country Name", "Year", "Female Life Expectancy at Birth"),
+      digits = 2,
+      caption = "Long Format of plot_data: Top 4 Cyclone-Prone Nations (2024) vs. World") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+2.  *How do the two functions differ in their output?*
+
+The tidyverse function pivot_longer() outputs a tibble, while the base R
+reshape() function outputs a basic R dataframe. Tibbles tend to be more
+human-readable with cleaner presentation, but are not very different
+from R dataframes just from appearance alone. A bigger difference is the
+way the two functions differ in treating variables: the tidyverse's
+output won't make the new column values into factors like the base R's
+function will.
+
+3.  *Create table showing the min, mean, and max life expectancies for
+    each population in your dataset.*
+
+```{r summarize cyclone data, eval=TRUE, echo=TRUE}
+# Subsetting data for each country and population group
+china_long <- subset(cyclone_data_long, name == "China")
+philippines_long <- subset(cyclone_data_long, name == "Philippines")
+japan_long <- subset(cyclone_data_long, name == "Japan")
+mexico_long <- subset(cyclone_data_long, name == "Mexico")
+world_long <- subset(cyclone_data_long, name == "World")
+
+pop_list <- list(china_long, philippines_long, japan_long, mexico_long, world_long)
+
+# place to store the new data
+summary_e0_table <- data.frame(
+  name = character(0), 
+  `minimum e_0` = numeric(0), 
+  `maximum e_0` = numeric(0), 
+  `average e_0` = numeric(0)
+)
+
+for (populationn in pop_list) {
+  pop_name <- unique(populationn$name)
+  min_e0 <- min(populationn$e_0, na.rm = TRUE)
+  max_e0 <- max(populationn$e_0, na.rm = TRUE)
+  mean_e0 <- mean(populationn$e_0, na.rm = TRUE)
+  
+  summary_e0_table <- rbind(summary_e0_table, 
+                            data.frame(name = pop_name, 
+                                       `minimum e_0` = min_e0, 
+                                       `maximum e_0` = max_e0, 
+                                       `average e_0` = mean_e0))
+}
+
+kable(summary_e0_table, 
+      col.names = c("Country Name", "e_0 Minimum", "e_0 Maximum","e_0 Average"),
+      digits = 2,
+      caption = "Female Life Expectancy at Birth in Years: Top 4 Cyclone-Prone Nations (2024) vs. World") %>%
+  kable_styling(font_size = 15)
+
+```
+
+***(e)15 points** Choose one of the long format data.frames you just
+created. Use `ggplot + geom_line()` to create a plot of female life
+expectancy against time by the 5 regions (4 countries + world) in your
+dataset. Print the plot in our output **AND** save this plot as a .pdf.
+Comment on how the life expectancy trajectories of the four countries
+you chose compare to the overall trajectory of life expectancy across
+the World?*
+
+```{r data wrangling, eval=FALSE, echo=FALSE}
+# cyclone_data_long <- cyclone_data_long %>%
+#   select(-country_code)
+# cyclone_data_long
+
+# cyclone_data_wide <- cyclone_data_long %>%
+#   pivot_wider(names_from = name, values_from = e_0)
+# 
+# cyclone_data_wide
+```
+
+```{r cyclone female e0 ggplot to PDF, eval=TRUE, echo=TRUE}
+# Save the plot as a PDF
+pdf("cyclone_e0_plot.pdf", 
+    width = 6, height = 6)
+
+cyclone_data_long$Year <- as.numeric(cyclone_data_long$Year)
+
+ggplot(cyclone_data_long, aes(x = Year, y = e_0, color = name)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Female Life Expectancy Over Time: Cyclone-Prone Nations vs. World",
+    x = "Year",
+    y = "Life Expectancy at Birth (Years)",
+    color = "Country"
+  ) +
+  scale_color_manual(values = c("chocolate", "goldenrod", "seagreen", "steelblue", "slateblue")) +
+  scale_x_continuous(breaks = seq(min(cyclone_data_long$Year), max(cyclone_data_long$Year), by = 5)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+dev.off()
+```
+
+```{r cyclone female e0 ggplot, eval=TRUE, echo=TRUE}
+
+cyclone_data_long$Year <- as.numeric(cyclone_data_long$Year)
+
+ggplot(cyclone_data_long, aes(x = Year, y = e_0, color = name)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Female Life Expectancy Over Time: Cyclone-Prone Nations vs. World",
+    x = "Year",
+    y = "Life Expectancy at Birth (Years)",
+    color = "Country"
+  ) +
+  scale_color_manual(values = c("chocolate", "goldenrod", "seagreen", "steelblue", "slateblue")) +
+  scale_x_continuous(breaks = seq(min(cyclone_data_long$Year), max(cyclone_data_long$Year), by = 5)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+This plot shows the scale of great dips in life expectancy at birth,
+particularly in China (red) in 1960. This was due to the Great Chinese
+Famine which occurred between 1959-1961 and is attributed to the Great
+Leap Forward by many historians. According to
+[Wikipedia](https://en.wikipedia.org/wiki/Great_Chinese_Famine#cite_note-:0-4)
+(cited by many journal articles,
+[this](https://pmc.ncbi.nlm.nih.gov/articles/PMC1127087/) being one of
+them) this famine is considered one of the deadliest in history.
+
+All nations except the Philippines appear to be surpassing the World's
+trends, especially from about the mid 1970s onward.
+
+# Problem 2: Histograms - 15 points
+
+***(a)5 points** Create two histograms using base `R` of the male life
+expectancies and female life expectancies in 2023 that has both
+histograms side-by-side in a two-panel plot. Show your plot in your
+output and save it to .pdf.*
+
+I am assuming we can use the same four-country data as in the first
+problem. These histograms will be life expectancies in 2023 of nations
+experiencing the most cyclones in 2024. I am also assuming that instead
+of binning the life expectancies in bins of 5-year increments, this
+question is asking for a side-by-side comparison of the 2023 life
+expectancies between the chosen nations + world. Therefore, instead of
+making the histograms using hist() (which would require )
+
+```{r male data wrangling, eval=TRUE, echo=FALSE}
+# Male data wrangling
+male_cyclone_data = e0M1 %>%
+  filter(country_code %in% c(156, 608, 392, 484, 900))
+
+male_cyclone_long <- male_cyclone_data %>%
+  pivot_longer(
+    cols = `1950`:`2023`,  # Specify the columns from years 1951 to 2023
+    names_to = "Year",     # name of new SINGLE column for year from MANY columns
+    values_to = "e_0"      # name of new column for life expectancy values
+  )
+
+# male_cyclone_long
+
+```
+
+```{r data prep for histograms, eval=TRUE, echo=FALSE}
+# cyclone_data_long
+
+cyclone_data_long_2023 = cyclone_data_long %>% 
+  filter(Year == 2023) %>% 
+  select(-Year)
+male_cyclone_long_2023 = male_cyclone_long %>% 
+  filter(Year == 2023) %>% 
+  select(-Year)
+
+# cyclone_data_long_2023
+# male_cyclone_long_2023
+
+```
+
+The question asked for histograms, but I'm also adding a similar
+visualization that may achieve what the question is asking better below,
+using barplot().
+
+```{r cyclone base R hist to pdf, eval=TRUE, echo=TRUE}
+pdf("2023_e0_freqhistograms.pdf",
+    width = 10, height = 6)
+
+par(mfrow = c(1, 2))
+
+hist(cyclone_data_long_2023$e_0,
+  main = "Female Life Expectancies (2023)",
+  xlab = "Life Expectancy in Years",
+  col = "goldenrod",
+  xlim = c(65, 90),
+  breaks = 5
+)
+
+hist(male_cyclone_long_2023$e_0,
+  main = "Male Life Expectancies (2023)",
+  xlab = "Life Expectancy in Years",
+  col = "seagreen",
+  xlim = c(65, 90),
+  breaks = 5
+)
+
+dev.off()
+```
+
+```{r cyclone base R hist, eval=TRUE, echo=TRUE}
+par(mfrow = c(1, 2))
+
+hist(cyclone_data_long_2023$e_0,
+  main = "Female Life Expectancies (2023)",
+  xlab = "Life Expectancy in Years",
+  col = "goldenrod",
+  xlim = c(65, 90),
+  breaks = 5
+)
+
+hist(male_cyclone_long_2023$e_0,
+  main = "Male Life Expectancies (2023)",
+  xlab = "Life Expectancy in Years",
+  col = "seagreen",
+  xlim = c(65, 90),
+  breaks = 5
+)
+```
+
+```{r cyclone base R barplot to pdf, eval=TRUE, echo=TRUE}
+pdf("2023_e0_countrycomparisons.pdf",
+    width = 10, height = 6)
+
+par(mfrow = c(1, 2))
+barplot(
+  cyclone_data_long_2023$e_0,
+  names.arg = cyclone_data_long_2023$name,
+  main = "Female Life Expectancies (2023)",
+  xlab = "Country",
+  ylab = "Life Expectancy in Years",
+  col = "goldenrod",
+  las = 2  
+)
+
+barplot(
+  male_cyclone_long_2023$e_0,
+  names.arg = male_cyclone_long_2023$name,
+  main = "Male Life Expectancies (2023)",
+  xlab = "Country",
+  ylab = "Life Expectancy in Years",
+  col = "seagreen",
+  las = 2  
+)
+
+dev.off()
+```
+
+```{r cyclone base R barplot, eval=TRUE, echo=TRUE}
+par(mfrow = c(1, 2))
+barplot(
+  cyclone_data_long_2023$e_0,
+  names.arg = cyclone_data_long_2023$name,
+  main = "Female Life Expectancies (2023)",
+  xlab = "Country",
+  ylab = "Life Expectancy in Years",
+  col = "goldenrod",
+  las = 2  
+)
+
+barplot(
+  male_cyclone_long_2023$e_0,
+  names.arg = male_cyclone_long_2023$name,
+  main = "Male Life Expectancies (2023)",
+  xlab = "Country",
+  ylab = "Life Expectancy in Years",
+  col = "seagreen",
+  las = 2  
+)
+
+```
+
+***(b)5 points** Create a histogram using `ggplot2` of the male life
+expectancies and female life expectancies in 2023 that has both
+histograms side-by-side in a two-panel plot. Show your plot in your
+output and save it to .pdf. plot in your output and save it to .pdf.*
+
+```{r cyclone ggplot hist side by side, eval=TRUE, echo=TRUE}
+
+plot1 = ggplot(cyclone_data_long_2023, aes(x = name, y = e_0)) +
+  geom_bar(stat = "identity", fill = "goldenrod", color = "white") +
+  labs(
+    title = "Female e0 by Country (2023)",
+    x = "Country",
+    y = "Life Expectancy in Years"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+plot2 = ggplot(male_cyclone_long_2023, aes(x = name, y = e_0)) +
+  geom_bar(stat = "identity", fill = "seagreen", color = "white") +
+  labs(
+    title = "Male e0 by Country (2023)",
+    x = "Country",
+    y = "Life Expectancy in Years"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+# Combine the plots with increased space between them
+combined_plot = plot1 + plot2 + plot_layout(ncol = 2, widths = c(1, 1))  
+combined_plot
+
+ggsave("cyclone_e0_by_gender_sided.pdf", combined_plot, width = 20, height = 8)
+
+```
+
+***(c)5 points** Create a histogram using `ggplot2` of the male life
+expectancies and female life expectancies in 2023 that has both female
+and male life expectancies are presented in the same plot with different
+colors. Show your plot in your output and save it to .pdf.*
+
+```{r cyclone ggplot hist dodged, eval=TRUE, echo=TRUE}
+
+female_data = cyclone_data_long_2023 %>% 
+  mutate(Gender = "Female")
+male_data <- male_cyclone_long_2023 %>% 
+  mutate(Gender = "Male")
+
+combined_data = bind_rows(female_data, male_data)
+
+ggplot(combined_data, aes(x = name, y = e_0, fill = Gender)) +
+  geom_bar(stat = "identity", 
+           position = "dodge", 
+           color = "white") +
+  labs(
+    title = "Life Expectancy by Country and Gender (2023)",
+    x = "Country",
+    y = "Life Expectancy in Years"
+  ) +
+  scale_fill_manual(values = c("goldenrod", "seagreen")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave('cyclone_e0_by_gender_dodge.pdf')
+```
+
+# Problem 3: Barplots - 15 points
+
+*Load the dataset `UNlocations` from the `wpp2024` package and read the
+documentation.*
+
+Description: United Nations table of locations, including regions, for
+statistical purposes as available in 2024.
+
+Source: Data provided by the United Nations Population Division.
+
+Note: the agcode columns are optional columns that can be used for
+aggregations. To aggregate a region with country_code=x, get the value
+of its location_type, say y. Then, look for the column agcode_y and
+locate all records with agcode_y=x that have location_type=4.
+
+```{r unloc data load, eval=TRUE, echo=FALSE}
+
+data(`UNlocations`)
+
+# print(colnames(UNlocations))
+# summary(UNlocations)
+# head(UNlocations)
+
+# Remove AgCode columns (optional and not necessary for this lab)
+UNlocations_raw = UNlocations %>%
+  select(-contains("agcode"))
+# UNlocations_raw
+
+```
+
+***(a)5 points** Create a barplot in base `R` that has a bar for each
+region of the world where the height of the bars is the number of
+countries in that region.*
+
+I am assuming the granularity for regions of the world that would best
+reflect my barplot's data would be reg_name because it is more granular
+than area_name. For example, area_name refers to countries in 'Western
+Asia' and 'South-Eastern Asia' as just 'Asia'.
+
+```{r region counting, eval=TRUE, echo=FALSE}
+# world_regions = UNlocations_raw$name[2:9]
+# world_regions
+
+countries_by_area = table(UNlocations_raw$reg_name)
+
+# Remove the first column because it's a set of all the rows which are categories, such as "Africa" or "High Income Countries", not countries.
+countries_by_area = countries_by_area[-1]
+
+# max(countries_by_area)
+```
+
+```{r base R barplot of regions by count, eval=TRUE, echo=TRUE}
+
+barplot(
+  countries_by_area,
+  main = "Countries by Region",
+  xlab = "Regions of the World",
+  ylab = "Number of Countries",
+  col = "orchid4",
+  # so that the labels all fit
+  las = 2,           
+  # so that they're legible
+  cex.names = 0.4, 
+  # unless the ytick labels will all auto-set to max 25
+  ylim = c(0, 30)    
+)
+
+```
+
+***(b)5 points** Create a barplot in `ggplot2` that has a bar for each
+region of the world where the height of the bars is the number of
+countries in that region.*
+
+```{r ggplot of regions by count, eval=TRUE, echo=TRUE}
+# base R bar plots don't work so well with dataframes but ggplot does
+countries_by_area_df <- as.data.frame(countries_by_area)
+
+ggplot(countries_by_area_df, aes(x = Var1, y = Freq)) + 
+  geom_bar(stat = "identity", fill = "orchid4", color = "white") +
+  labs(
+    title = "Countries by Region",
+    x = "Regions of the World",
+    y = "Number of Countries"
+  ) +
+  theme_minimal() + 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 6),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.title.x = element_text(size = 10),
+    axis.title.y = element_text(size = 10),
+    strip.text.x = element_text(size = 10)
+  ) +
+  scale_y_continuous(breaks = seq(0, 30, by = 5))
+```
+
+***(c)5 points** For at least one of the above plots color each bar a
+different color.*
+
+```{r viridis barplot of regions by count, eval=TRUE, echo=TRUE}
+ggplot(countries_by_area_df, aes(x = Var1, y = Freq, fill = Var1)) + 
+  geom_bar(stat = "identity", color = "white") +
+  labs(
+    title = "Countries by Region",
+    x = "Regions of the World",
+    y = "Number of Countries"
+  ) +
+  theme_minimal() + 
+  theme(legend.position = "none")  +  
+  #use this last line to get rid of the legend 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 6),
+    axis.text.y = element_text(size = 12),
+    plot.title = element_text(size = 12, face = "bold"),
+    axis.title.x = element_text(size = 10),
+    axis.title.y = element_text(size = 10),
+    strip.text.x = element_text(size = 10)
+  ) +
+  scale_y_continuous(breaks = seq(0, 30, by = 5)) +
+  # this is the most common one I've been taught and I think it's also color blind accessible
+  scale_fill_viridis_d() 
+
+```
+
+# Problem 4: Merging Two Datasets - 20 points
+
+*Check out the documentation for the base `R` function `merge` and the
+dplyr functions `left_join` and `full_join`.*
+
+```{r merge, eval=TRUE, echo=FALSE}
+?merge
+```
+
+Description: Merge two data frames by common columns or row names, or do
+other versions of database join operations.
+
+Usage: merge(x, y, ...)
+
+merge(x, y, by = intersect(names(x), names(y)), by.x = by, by.y = by,
+all = FALSE, all.x = all, all.y = all, sort = TRUE, suffixes =
+c(".x",".y"), no.dups = TRUE, incomparables = NULL, ...)
+
+```{r left join, eval=TRUE, echo=FALSE}
+?left_join
+```
+
+Description: Mutating joins add columns from y to x, matching
+observations based on the keys. There are four mutating joins: the inner
+join, and the three outer joins.
+
+Inner join: An inner_join() only keeps observations from x that have a
+matching key in y. This means that generally inner joins are not
+appropriate in most analyses, because it is too easy to lose
+observations.
+
+Outer joins: The three outer joins keep observations that appear in at
+least one of the data frames:
+
+A left_join() keeps all observations in x.
+
+A right_join() keeps all observations in y.
+
+A full_join() keeps all observations in x and y.
+
+left_join( x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...,
+keep = NULL )
+
+left_join( x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...,
+keep = NULL, na_matches = c("na", "never"), multiple = "all", unmatched
+= "drop", relationship = NULL )
+
+```{r full join, eval=TRUE, echo=FALSE}
+?full_join
+```
+
+full_join( x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...,
+keep = NULL )
+
+full_join( x, y, by = NULL, copy = FALSE, suffix = c(".x", ".y"), ...,
+keep = NULL, na_matches = c("na", "never"), multiple = "all",
+relationship = NULL )
+
+***(a)10 points** Use one of these functions to create a new data.frame
+called `e0` that contains all information from `e0F1` and `e0M1`. Pivot
+the data.frame longer to create an object called `e0_long` so that there
+is a new column called `Sex` indicating whether the row contains life
+expectancies for "Female" or "Male".*
+
+Because the question is asking for all information from `e0F1` and
+`e0M1` I will use full_join before pivoting.
+
+I am including information about using regex to grab the year columns
+affected by the pivot by using the following, but not using it in the
+code below:
+
+1.  \^: Matches the start of the string.
+2.  [0-9]: Matches any digit (0–9).
+3.  {4}: Matches exactly 4 digits (e.g., 1950, 2023).
+4.  \\.: Matches a literal period (.). The \\ is needed to escape the
+    '.' in regex, as '.' is like a wild card and can match any
+    character.
+5.  (x\|y): Matches either x or y. This is a group using the \| operator
+    (OR).
+6.  \$: Matches the end of the string.
+
+It's easier to use the select function because it is convenient, but
+that is also more hard-coded than using regex, so I'm including it as a
+comment in the code in case it's useful to me later.
+
+```{r e0 join, eval=TRUE, echo=TRUE}
+# Full Join the two dataframes together
+e0 <- full_join(e0F1, e0M1, by = "country_code")
+e0 = e0 %>% select(-name.y)
+e0 = e0 %>% rename(name = name.x) 
+# e0
+```
+
+The reason I chose not to present the entire e0_long dataframe, even
+with a Kable-style table, is because it is so large that the document
+fails to render.
+
+```{r e0_long pivot, eval=TRUE, echo=TRUE}
+e0_long <- e0 %>%
+  pivot_longer(
+    # cols = matches("^[0-9]{4}\\.(x|y)$") would also work
+    cols = -c(country_code, name), 
+    names_to = c("year", "sex"),
+    names_sep = "\\.",
+    values_to = "e_0"
+  )%>%
+  # Map 'x' and 'y' to 'Female' and 'Male'
+  mutate(
+    sex = ifelse(sex == "x", "Female", "Male") 
+  )
+
+# nrow(e0_long) #sanity check
+for_show = head(e0_long, 51)
+
+#present it
+kable(for_show,
+      col.names = c("Country Code", "Name", "Year", "Sex" , "Life Expectancy at Birth"),
+      digits = 2,
+      caption = "Long Format of e0 data in 20th Century: Male & Female Life Expectancy at Birth") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+***(b)5 points** Pick one country from those available and make a new
+data.frame called `e0.small` that contains only rows with data from
+those country.*
+
+I am choosing Cambodia with country code = 116. I read a paper in the
+previous demography-track course on new methodology for estimating
+excess deaths during the PPR (Pol Pot Regime). Those researchers used
+survivor interviews, satellite imagery from mass graves, and voter
+records, among other avenues, to make an educated guess. I don't have
+any experience seeing how this affects aggregate life expectancy data so
+I thought this would be a good opportunity to learn.
+
+```{r e0_small, eval=TRUE, echo=TRUE}
+
+e0_small = e0_long %>% 
+  filter(country_code == 116)
+
+# dim(e0_small)
+# e0_small
+
+kable(e0_small,
+      col.names = c("Country Code", "Name", "Year", "Sex" , "Life Expectancy at Birth"),
+      digits = 2,
+      caption = "Long Format of Male & Female Life Expectancy at Birth in Cambodia") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+***(c)5 points** Plot the male and female trajectories of life
+expectancy for that country using base `R` and `ggplot2`, using either
+color or line type to distinguish between the trajectories.*
+
+Base R plotting code:
+
+```{r base r Cambodia, eval=TRUE, echo=TRUE}
+
+cambodia_longF = e0_small[e0_small$sex == "Female", ]
+cambodia_longM <- e0_small[e0_small$sex == "Male", ]
+
+plot(cambodia_longF$year, cambodia_longF$e_0, 
+     type = "l", 
+     col = "goldenrod", 
+     lwd = 3, 
+     xlab = "Year", 
+     ylab = "Life Expectancy (e_0)", 
+     main = "Life Expectancy Trajectories (Cambodia)",
+     ylim = range(e0_small$e_0),
+     xaxt = "n")
+
+years = seq(1950, 2025, by = 5)
+axis(1, at = years, labels = years)
+
+lines(cambodia_longM$year, cambodia_longM$e_0, 
+      col = "seagreen", 
+      lwd = 3)
+
+#grid lines
+grid(nx = NULL, ny = NULL, col = "lightgray")
+
+legend("bottomright", 
+       legend = c("Female", "Male"), 
+       col = c("goldenrod", "seagreen"), 
+       lwd = 3)
+
+```
+
+ggplot2 plotting code:
+
+```{r ggplot Cambodia, eval=TRUE, echo=TRUE}
+e0_small$year = as.numeric(e0_small$year)
+
+ggplot(e0_small, aes(x = year, y = e_0, color = sex)) +
+  annotate("rect", xmin = 1975, xmax = 1979, ymin = -Inf, ymax = Inf, 
+           fill = "red", alpha = 0.25) +
+  geom_line(size = 1) +
+  labs(
+    title = "Life Expectancy Trajectories (Cambodia)",
+    x = "Year",
+    y = "Life Expectancy (e_0)",
+    color = "Sex"
+  ) +
+  scale_color_manual(
+    values = c("Female" = "goldenrod", "Male" = "seagreen")
+  ) +
+  scale_x_continuous(breaks = seq(min(e0_small$year), max(e0_small$year), by = 5)) +
+  scale_y_continuous(breaks = seq(0, 80, by = 5)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+The PPR period lasted from 1975-1979.

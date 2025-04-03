@@ -1,0 +1,181 @@
+---
+title: "R Lab 1"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+  pdf_document:
+    toc: true
+---
+
+# Learning new functions – 15 points
+
+The quantile function returns sample quantiles given a set of probabilities; therefore, they range from 0 to 1. The way the quantiles are calculated depends on choosing a value for type = 1,...,9 otherwise the default is the 7th way. Its terms include x, the vector of numerical data, the probs, which are decimals, na.rm, which is the same as in prod and defaults to FALSE, as well as names, type, and digits. names is defaulted to TRUE, and the last two terms both default to 7.
+
+The helper page has many examples, and the first two are quantile(x <- rnorm(1001)) # Extremes & Quartiles by default
+quantile(x,  probs = c(0.1, 0.5, 1, 2, 5, 10, 50, NA)/100)
+
+The prod function multiplies all terms in its argument. It is by default a function that removes missing values (na.rm = FALSE) and has the capability to multiply numeric/complex/logical vectors. It handles logical values in a boolean algebra way. The helper page example is: print(prod(1:7)) == print(gamma(8))
+
+```{r new_fns, eval=TRUE, echo=TRUE, tidy=TRUE}
+#pick two of the following functions (preferably two you have never used before): prod, factorial, choose, sum, cumsum, quantile. Write a line of code to open the help screen for the function.
+?quantile
+?prod
+
+#Create the vector x <- 1:100.
+x = c(1:100)
+
+#Create another vector y which is any subset of elements of x with 50 elements. This vector will have all the even numbers from 0 to 100.
+y = subset(x, x %% 2 == 0)
+#length(y)
+
+#Apply your two chosen functions to y
+quantile(y)
+prod(y)
+```
+
+# Working with vectors – 15 points
+
+```{r vectors, eval=TRUE, echo=TRUE, tidy=TRUE}
+#Create a numeric vector called x of length 15 that contains at least some elements that are not integers.
+x = c(0, 1, 1, 2, 3, 5.78, 8.06, 13, 21.4, 3.4, 5.5, 8.9, 1.44, 2.33, 3.77)
+
+#Compute the length of x.
+length(x)
+
+#Compute the sum of x.
+sum(x)
+
+#Compute the median of x in two different ways.
+#First way
+median(x)
+#Second way; the median is the "middle value" of a an ascending sequence, so we're lucky we have an odd number in our vector 'x'. The lines below are hard-coded for an odd-numbered sequence.
+sorted_x = sort(x, decreasing = FALSE)
+med_x = sorted_x[(length(x)+1)/2]
+print(med_x)
+
+#Compute the cumulative sum of x.
+cumsum(x)
+
+#Find the minimum values of x.
+min(x)
+
+#Sort the elements of x from smallest to largest.
+sort(x, decreasing = FALSE)
+
+#Output the index of elements of x that are less than 2.
+x[x<2]
+
+#Output the a logical vector indicating which elements of x are less than 2.
+z = x<2
+print(z)
+
+#Replace the first element of x with NA.
+x[1] <- NA
+print(x)
+
+#Now, compute the sum of all elements of x except the NA value.
+sum(x, na.rm = TRUE)
+```
+
+# Matrices – 10 points
+
+```{r matrices, eval=TRUE, echo=TRUE, tidy=TRUE}
+#Create a matrix M which is a 5 × 5 matrix whose elements are unique integers.
+m0 = c(1:25)
+(M = matrix(m0, ncol = 5, byrow = TRUE))
+
+#Extract from M the elements in positions [1,4], [1,5], [3,4], [3,5] as a 2 by 2 matrix M2, using a single command expression.
+M2 = M[c(1, 3), c(4, 5)]
+print(M2)
+
+#Find the inverse matrix of M2. Hint: read the documentation for the solve function.
+?solve
+solve(M2)
+#If b, the second term in the solve function is missing, b is taken to be an identity matrix and solve() will return the inverse of a, the first term in the solve function.
+
+#Using a single command replace those four elements in M by -1 (change their value into -1).
+M[c(1, 3), c(4, 5)] = -1
+print(M)
+```
+
+# Functions – 20 points
+
+```{r fns, eval=TRUE, echo=TRUE, tidy=TRUE}
+funx = function(x) {
+  
+  mean_x = mean(x)
+  geom_mean_x <- prod(x)^(1/length(x))
+  
+  mean_x - geom_mean_x
+}
+
+x1 = 1:6
+output_x1 = funx(x1)
+output_x1
+
+x2 = c(8,1,3,2,1,6)
+output_x2 = funx(x2)
+output_x2
+```
+The difference will be 0 when the arithmetic mean equals the geometric mean. This is possible if and only if the sequence of numbers contains the same number, such as (4,4,4,4,4) or (.22,.22,.22). This comes from the [AM–GM inequality Wikipedia page](https://en.wikipedia.org/wiki/AM%E2%80%93GM_inequality)
+
+# Functions and Conditions – 20 points
+```{r fns_ifelse, eval=TRUE, echo=TRUE, tidy=TRUE}
+funstr = function(x) {
+  if(is.list(x)) {
+    return(1)}
+  else if(is.matrix(x)) {
+    return(2)}
+  else if(is.function(x)) {
+    return(3)}
+  else {
+    return(4)}
+}
+
+#Create an item A that is a matrix, B that is a vector, C that is a function and D that is a list of length three.
+a0 = c(26:50)
+A = matrix(a0, ncol = 5, byrow = TRUE)
+B = c(26:50)
+C = function(x) {
+  x[5] + 1000
+}
+D = list("A", "b", "C")
+
+# Name the elements of your list D and access the second element of the list in two ways.
+D = list(item_matrix = "A", item_vector = "b", item_function = "C")
+#First way
+D[2]
+#Second way
+D$item_vector
+
+# Execute funstr(A), funstr(B), funstr(C), funstr(D)
+funstr(A)
+funstr(B)
+funstr(C)
+funstr(D)
+```
+
+# `for` loops – 20 points
+```{r for_loops, eval=TRUE, echo=TRUE, tidy=TRUE}
+#Write a for loop that loops over the letters of the alphabet and prints out the following sentence for each letter that appears in the name of one of the 12 months, e.g. The letter "a" is in January, February, March, April, May, August.
+
+#Hint: You may find the following pre-defined vectors in R helpful: letters, LETTERS, and month.name.
+
+#Hint: Read the documentation for the grepl and paste functions.
+#print(month.name)
+
+for (letter in letters) {
+  months <- month.name[grepl(letter, tolower(month.name))]
+  
+  # If the letter is found in any month, then we print those months.
+  if (length(months) > 0) {
+    months_str <- paste(months, collapse = ", ")
+
+    cat(sprintf('The letter "%s" is in %s.\n', letter, months_str))
+  }
+}
+
+```
+There were issues with using cat() or paste() with the final print statement, so I opted for sprintf(). More can be found [here](https://rdrr.io/r/base/sprintf.html).
