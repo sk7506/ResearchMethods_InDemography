@@ -1,0 +1,1217 @@
+---
+title: "SOC/CSSS/CSDE 533 Homework 4"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_knit$set(root.dir = paste0("~/Dropbox/Training/CSDE533/Wi25/",
+#                                        "Assignments/HW 4/"))
+```
+
+```{r pkgs, eval = TRUE, echo = FALSE, warning = FALSE}
+## Uncomment if you need to install this package
+# install.packages("haven")
+library(kableExtra)
+library(ggplot2)
+library(gridExtra)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(readxl)
+library(survey)
+library(labelled)
+library(knitr)
+```
+
+# Problem 1: Cohort Component Projection Method - 20 points
+
+*Essential Demographic Methods* **Chapter 7, Problem 5.**
+
+**The matrix** $A$ shown below is a Leslie matrix for projecting the
+female population of Argentina. There are three age groups, each 18
+years wide. The starting population for 1992 includes 3.9 million girls
+aged 0 to 18, 3.3 million women aged 18 to 36, and 2.8 million women
+aged 36 to 54.
+
+$$
+\begin{equation*}
+A = \left[ \begin{array}{ccc} 0.551 & 0.556 & 0.037 \\
+0.962 & 0 & 0 \\
+0 & 0.909 & 0 \\ \end{array}\right]
+\end{equation*}
+$$
+
+## (a) 5 points
+
+**1. How long is the interval of time covered by a single projection
+step?**
+
+18 years because each age group is 18 years wide.
+
+**2. Describe the interpretation of the** $a_{12} = 0.962$ element of
+the Leslie matrix in words.
+
+0.962 is the survival rate for group aged 0 to 18. The subdiagonal
+formed by 0.962 and 0.909 represents the percentage of individuals in
+that row/column's age group that survive to the next age group.
+
+**3. Describe the interpretation of the** $a_{11} = 0.551$ element of
+the Leslie matrix in words.
+
+0.551 is the average number of female offspring born to a female
+individual per 18-year timestep in the 0-18 age group. The first row
+represents the fertility.
+
+## (b) 5 points
+
+**What is the total population of women up to age 54 after one
+projection step?**
+
+```{r one projection step 1b, eval = TRUE, echo=TRUE}
+starting_argentina_fpop = c(3900000, 3300000, 2800000)
+
+argentina_leslie = matrix(
+  c(0.551, 0.556, 0.037, 0.962, 0, 0, 0, 0.909, 0),
+  nrow = 3, ncol = 3,
+  byrow = TRUE
+)
+
+argentina_fpop_projection1 = argentina_leslie %*% starting_argentina_fpop
+cat(argentina_fpop_projection1, "\n", "\n")
+
+# total_population_up_to_54 = sum(onestep_argentina_fpop)
+
+cat("The total population of women up to age 54 after one projection step is", sum(argentina_fpop_projection1))
+
+```
+
+This is 18 years later. There will be nearly 11 million women up to age
+54.
+
+## (c) 5 points
+
+**What is the total population of women up to age 54 after three
+projection steps? To what year would this total apply?**
+
+```{r three steps later 1c, eval = TRUE, echo=TRUE}
+
+argentina_fpop_projection3 = argentina_leslie %*% argentina_leslie %*% argentina_leslie %*% starting_argentina_fpop
+
+cat("The total population of women up to age 54 after three projection steps is", sum(argentina_fpop_projection3))
+
+```
+
+This is: $$18*3 = \text{54 years after 1992}$$ which is the year $2046$.
+
+## (d) 5 points
+
+**At what rate would the population of Argentina be growing according to
+this projection over three projection steps?**
+
+**This answer uses code from SOC/CSSS/CSDE 533 HW #1 provided by Jess Godwin.**
+
+```{r estimating growth rate 1d, eval = TRUE, echo=TRUE}
+
+projected_years <- c(2010, 2046)
+population_B <- c(sum(argentina_fpop_projection1), sum(argentina_fpop_projection3)) 
+
+population_data <- data.frame(projected_years, population_B)
+
+population_data <- population_data %>%
+  mutate(growth_rate = log( population_B / lag(population_B) ) / ( projected_years - lag(projected_years) ) )
+
+population_data %>%
+  filter(!is.na(growth_rate)) %>%
+  mutate(Period = "2010-2046") %>%
+  select(Period, growth_rate) %>% 
+  kbl(., digits = c(0, 4),
+      row.names = FALSE, 
+      caption = paste0("Argentina's Female population growth rate between the first and third step population projection under the assumption of exponential growth.")) %>%
+  kable_styling(position = "center", full_width = FALSE)
+
+```
+
+# Problem 2: Computing a Leslie Matrix - 30 points
+
+**We will use [Human Mortality Database](https://www.mortality.org/) and
+[Human Fertility Database](https://www.humanfertility.org/Home/Index)
+data for this problem. Select a country and 5-year period from whose
+mortality and fertility data you will create a Leslie matrix that
+ignores migration.**
+
+I choose Ireland in the year 2000. This will be a closed, Female-only
+population. We assume it is stationary.
+
+## (a) 5 points
+
+**What dataset is necessary to calculate the non-zero elements of every
+row of the Leslie matrix besides the first? What dataset is also
+necessary to calculate the elements of row 1 of the Leslie matrix? Is
+there any other information you need to complete the first row? If so,
+what?**
+
+We can use annual death rates data for the year 2000 instead of
+estimating age-specific mortality rates the long way, this will help us
+get the probability of survival for each set of age groups.
+
+We also need age-specific fertility rates for the year 2000, which can
+be directly downloaded, rather than calculated by hand from birth counts
+and population; these data are also in annual 1x1 format.
+
+Lastly, we need the population counts for Ireland in 2000-2004.
+
+If needed, we can assume as in HW #3, from the Essential Demographic
+Methods textbook, that the default fraction of Females at birth is
+0.4886, that is, $SRB = \frac{1}{1+0.4886}$
+
+**This answer uses code from HW #3 to read and clean the HMD and HFD
+data from rich text to dataframes.**
+
+```{r load ireland deaths data 2a, eval = TRUE, echo=FALSE, warning=FALSE}
+death_lines = readLines("~/Documents/CSDE 533 Homeworks/ireland_deathrates.rtf")
+
+#skip unnecessary lines
+death_data_lines = death_lines[13:length(death_lines)]
+
+# get rid of '\\' and white space
+death_cleaned_lines = gsub("\\\\", "", death_data_lines)
+
+death_split_lines = death_cleaned_lines %>% 
+  strsplit("\\s+") %>% 
+  lapply(function(x) x[-1])
+
+hmd_ireland = data.frame(Year = integer(), Age = character(), Female = numeric(), Male = numeric(), Total = numeric())
+
+for (line in death_split_lines) {
+  hmd_ireland = rbind(hmd_ireland, data.frame(Year = as.integer(line[1]), 
+                                       Age = line[2], 
+                                       Female = as.numeric(line[3]),
+                                       Male = as.numeric(line[4]),
+                                       Total = as.numeric(line[5])))
+}
+
+hmd_ireland_raw <- hmd_ireland %>%
+  filter(Year >= 2000 & Year <= 2004) %>% 
+  rename(Female_Death_Rate = Female, Male_Death_Rate = Male, Total_Death_Rate = Total)
+
+hmd_ireland_raw[is.na(hmd_ireland_raw)] <- 0
+
+```
+
+```{r load ireland fertility data 2a, eval = TRUE, echo=FALSE, warning = FALSE}
+
+fertility_lines = readLines("~/Documents/CSDE 533 Homeworks/ireland_fertilityrates.rtf")
+
+#skip unnecessary lines
+fertility_data_lines = fertility_lines[13:length(fertility_lines)]
+
+# get rid of '\\' and white space
+fertility_cleaned_lines = gsub("\\\\", "", fertility_data_lines)
+
+hfd_ireland = data.frame(Year = integer(), Age = character(), Cohort = character(), ASFR = numeric(), stringsAsFactors = FALSE)
+
+for (line in fertility_cleaned_lines) {
+  parts <- unlist(strsplit(line, "\\s+"))  # Split by whitespace
+  
+  # Append to dataframe
+  hfd_ireland = rbind(hfd_ireland, data.frame(
+    Year = as.integer(parts[1]), 
+    Age = parts[2], 
+    Cohort = parts[3],
+    ASFR = as.numeric(parts[4]),
+    stringsAsFactors = FALSE
+  ))
+}
+
+hfd_ireland_raw <- hfd_ireland %>%
+  filter(Year >= 2000 & Year <= 2004) %>% 
+  select(-Cohort)
+
+hfd_ireland_raw[is.na(hfd_ireland_raw)] = 0
+
+# to check if there are 0s in the earliest and latest age groups,
+# just change the age to whatever you'd like:
+# age_55_rows <- hfd_ireland_raw[hfd_ireland_raw$Age == "55+", ]
+# age_55_rows
+```
+
+```{r load ireland population data 2a, eval = TRUE, echo=FALSE, warning=FALSE}
+pop_lines = readLines("~/Documents/CSDE 533 Homeworks/ireland_population.rtf")
+
+#skip unnecessary lines
+pop_data_lines = pop_lines[13:length(pop_lines)]
+
+# get rid of '\\' and white space
+pop_cleaned_lines = gsub("\\\\", "", pop_data_lines)
+
+pop_split_lines = pop_cleaned_lines %>% 
+  strsplit("\\s+") %>% 
+  lapply(function(x) x[-1])
+
+pop_ireland = data.frame(Year = integer(), Age = character(), Female = numeric(), Male = numeric(), Total = numeric())
+
+for (line in pop_split_lines) {
+  pop_ireland = rbind(pop_ireland, data.frame(Year = as.integer(line[1]), 
+                                       Age = line[2], 
+                                       Female = as.numeric(line[3]),
+                                       Male = as.numeric(line[4]),
+                                       Total = as.numeric(line[5])))
+}
+
+pop_ireland_raw <- pop_ireland %>%
+  filter(Year >= 2000 & Year <= 2004) %>% 
+  rename(Female_Pop = Female, Male_Pop = Male, Total_Pop = Total)
+
+pop_ireland_raw[is.na(pop_ireland_raw)] <- 0
+```
+
+```{r read life table data 2a, eval=TRUE, echo=FALSE, warning=FALSE}
+lifetable_lines = readLines("~/Documents/CSDE 533 Homeworks/ireland_female_lifetable.rtf")
+
+#skip unnecessary lines
+lifetable_data_lines = lifetable_lines[13:length(lifetable_lines)]
+
+# get rid of '\\' and white space
+lifetable_cleaned_lines = gsub("\\\\", "", lifetable_data_lines)
+
+lifetable_split_lines = lifetable_cleaned_lines %>% 
+  strsplit("\\s+") %>% 
+  lapply(function(x) x[-1])
+
+lifetable_ireland = data.frame(Year = integer(), Age = character(), mx = numeric(), qx = numeric(), ax = numeric(), lx = numeric(), dx = numeric(), Lx = numeric(), Tx = numeric(), ex = numeric())
+
+for (line in lifetable_split_lines) {
+  lifetable_ireland = rbind(lifetable_ireland, data.frame(
+                                       Year = as.integer(line[1]), 
+                                       Age = line[2], 
+                                       mx = as.numeric(line[3]),
+                                       qx = as.numeric(line[4]),
+                                       ax = as.numeric(line[5]),
+                                       lx = as.numeric(line[6]),
+                                       dx = as.numeric(line[7]),
+                                       Lx = as.numeric(line[8]),
+                                       Tx = as.numeric(line[9]),
+                                       ex = as.numeric(line[10])))
+}
+
+lifetable_ireland_raw <- lifetable_ireland %>%
+  filter(Year >= 2000 & Year <= 2004) %>% 
+  rename(Female_mx = mx,Female_qx = qx, Female_ax = ax, Female_lx = lx, Female_dx = dx, Female_Lx = Lx, Female_Tx = Tx, Female_ex = ex)
+
+lifetable_ireland_raw[is.na(lifetable_ireland_raw)] <- 0
+
+```
+
+Important note: all of the ASFRs for the age group 12 and under, and the
+age group 55 and up, for all five years 2000-2004 are all = 0.
+
+```{r merge and clean data 2a, eval = TRUE, echo=FALSE, warning=FALSE}
+# Merge population and fertility data based on Year and Age
+ireland_data <- left_join(pop_ireland_raw, hfd_ireland_raw,  by = c("Year", "Age"))
+ireland_data[is.na(ireland_data)] = 0
+
+# Merge life table data for Lx values
+ireland_data <- left_join(ireland_data, lifetable_ireland_raw, by = c("Year", "Age"))
+ireland_data[is.na(ireland_data)] = 0
+
+ireland_data_2000 = ireland_data %>%
+  filter(Year == 2000)
+
+kable(ireland_data_2000,
+      col.names = c("Year", "Age", "Female Population", "Male Population", "Total Population", "Age-Specific Fertility Rate (Total)", "Female nmx", "Female nqx", "Female nax", "Female nlx", "Female ndx", "Female nLx", "Female nTx", "Female nex"),
+      caption = "Initial Joined Data for female individuals in Ireland, Year 2000") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "900px", height = "300px")
+```
+
+## (b) 5 points
+
+**Calculate the non-zero elements of every row of the Leslie matrix
+except the first. Show your code and display your calculations in some
+way.**
+
+I am choosing to project forward the year 2000.
+
+We can calculate the survivorship proportions for each age group as
+follows:
+
+$$\frac{_{n}L_{x}}{_{n}L_{x-n}}$$ For a stationary population,
+$_{n}L_{x}$ is the number of people alive aged $[x, x+n)$ at the
+selected year. For our purposes, we will use Lx values from the life
+table. These values will form the diagonal elements in the Leslie
+matrix, excluding the first row (the fertility row)
+
+the early-age age-group survivorship can be done with the following equation, which will fill in the first element of the survivorship column:
+
+$$ _{n}N_{0}^F(t + n) = \frac{_{n}L_{0}}{l_{0}} \times _{n}B_{x}[t, t+n)$$
+
+```{r survivorship calculation 2b, eval=TRUE, echo=TRUE}
+
+ireland_data_2000$survivorship = NA
+
+          # first row has no preceding age group
+for (i in 2:nrow(ireland_data_2000)) {
+    #(current age group's Lx) / (previous age group's Lx)
+    ireland_data_2000$survivorship[i] = ireland_data_2000$Female_Lx[i] / ireland_data_2000$Female_Lx[i - 1]
+  }
+
+ireland_data_2000$survivorship[1] = ireland_data_2000$Female_Lx[1] / ireland_data_2000$Female_lx[1]
+
+# hard-code before we combine age group 109 and 110+ 
+# since no one survives open interval, must put T_{x+n}/T_{x} instead
+ireland_data_2000$survivorship[nrow(ireland_data_2000)] = 0
+
+show_survivorship_ireland_data_2000 = ireland_data_2000 %>% 
+  select(Age, survivorship) 
+
+kable(show_survivorship_ireland_data_2000,
+      col.names = c("Age", "Survivorship"),
+      caption = "Sanity Checking Survivorship") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "300px", height = "600px")
+
+```
+
+
+In this case, we can assume 0.4886 is the sex ratio at birth (48.86%
+born as females). In order to make a vector that forms the first row of
+the leslie matrix, we must adjust all fertility rates by the 0.4886
+value so as to only calculate births of females.
+
+
+
+```{r create female ASFRs for later 2b, eval=TRUE, echo=TRUE}
+
+ireland_data_2000$Female_ASFR = NA
+
+for (i in 1:nrow(ireland_data_2000)) {
+      ireland_data_2000$Female_ASFR[i] = ireland_data_2000$ASFR[i]*(1/(1+1.05))
+  }
+
+# remove unnecessary columns for brevity
+ireland_data_2000F = ireland_data_2000 %>% 
+  select(-Year, -Male_Pop, -Total_Pop, -ASFR, -Female_ax, Female_dx, -Female_ex)
+
+ireland_data_2000F$survivorship[nrow(ireland_data_2000F)] = 0  
+
+```
+
+We can also clean up the Ireland data and create a new row that
+collapses the final few age groups, so that the final line has observed
+fertility and death data rather than 0's. This means the "109" age group is really the "109 and 110+" age group:
+
+```{r cleanup input data 2b, eval=TRUE, echo=TRUE}
+# last two rows (109 and 110+ age group)
+last_two_rows = tail(ireland_data_2000F, 2)
+
+# Sum the values for numerical columns
+summed_row = last_two_rows %>%
+  summarise(
+    Age = "109",
+    Female_Pop = sum(Female_Pop, na.rm = TRUE),
+    Female_mx = sum(Female_Pop, na.rm = TRUE),
+    Female_qx = sum(Female_qx, na.rm = TRUE),
+    Female_lx = sum(Female_lx, na.rm = TRUE),
+    Female_dx = sum(Female_lx, na.rm = TRUE),
+    Female_Lx = sum(Female_Lx, na.rm = TRUE),
+    Female_Tx = sum(Female_Tx, na.rm = TRUE),
+    survivorship = sum(survivorship, na.rm = TRUE),
+    Female_ASFR = sum(Female_ASFR, na.rm = TRUE)
+
+  )
+
+ireland_data_2000F = ireland_data_2000F %>%
+  slice(1:(n() - 2)) %>%
+  bind_rows(summed_row)
+
+```
+
+And create the leslie matrix:
+
+```{r subdiagonal leslie matrix calculation 2b, eval=TRUE, echo=TRUE}
+# leslie matrix dimensions: same number of rows and columns as there are age groups
+num_age_groups = length(unique(ireland_data_2000F$Age))
+
+ireland_leslie_matrix = matrix(NA, nrow = num_age_groups, ncol = num_age_groups)
+
+survivorship_values = ireland_data_2000F$survivorship[1:num_age_groups]
+
+# Place the survivorship values on the subdiagonal (starting from row 2, column 1)
+for (i in 1:length(survivorship_values) - 1) {
+  ireland_leslie_matrix[i + 1, i] <- survivorship_values[i]
+}
+
+ireland_leslie_matrix[is.na(ireland_leslie_matrix)] = 0
+
+top_5x5 <- ireland_leslie_matrix[1:5, 1:5]
+print("First few rows and columns of the Leslie Matrix")
+print(top_5x5)
+
+```
+
+The open interval (final age group) can be projected forwards by summing
+up the survivors to age x with the survivors above age x.
+
+$$ _{\infty}N_{x}^F(t+n) = _{n}N_{x-n}^F(t) \times \frac{_{n}L_{x}}{_{n}L_{x - n}} + _{\infty}N_{x}^F(t) \times \frac{T_{x + n}}{T_{x}}$$
+
+Which in the lecture 11 leslie matrix powerpoint slide can be calculated as:
+
+$$\frac{T_{x + n}}{T_{x}}$$
+
+```{r open interval in leslie matrix calculation 2b, eval=TRUE, echo=TRUE}
+  
+penult_index = nrow(ireland_data_2000F) -1
+final_index = nrow(ireland_data_2000F)
+
+T_x_penult <- ireland_data_2000F$Female_Tx[penult_index]  # T_x
+T_x_final <- ireland_data_2000F$Female_Tx[final_index]  # T_{x+n}
+
+open_interval_scalar = T_x_final/T_x_penult
+
+# Insert the computed value into the last row/last column of the Leslie matrix
+ireland_leslie_matrix[final_index, ncol(ireland_leslie_matrix)] <- open_interval_scalar
+
+tail_5x5 <- ireland_leslie_matrix[(nrow(ireland_leslie_matrix)-4):nrow(ireland_leslie_matrix), 
+                                  (ncol(ireland_leslie_matrix)-4):ncol(ireland_leslie_matrix)]
+print("Final few rows and columns of the Leslie Matrix")
+print(tail_5x5)
+
+```
+
+## (c) 5 points
+
+**Calculate the non-zero elements of the first row of the Leslie matrix.
+Show your code and display your calculations in some way.**
+
+We can assume that any age group not recorded in the HFD (12 and under,
+55 and over) has an ASFR = 0.
+
+The births that fill in the first row of the leslie matrix can be
+calculated using this formula, the sum of two terms:
+
+$$ _{n}B_{x}[t, t+n) = (_{n}F_{x} \times n \times \frac{_{n}N_{x}^F}{2}) + (_{n}F_{x} \times n \times \frac{_{n}N_{x-n}^F \times \frac{_{n}L_{x}}{_{n}L_{x-n}}}{2})$$
+
+Where all $_{n}F_{x}$ values are those for Female births only. The
+$_{n}N_{x}$ values are set = 1 as the input vector will be acted upon by
+this portion of the leslie matrix, so there's no need to duplicate the
+transformation.
+
+```{r first row leslie matrix calculation 2c, eval=TRUE, echo=TRUE}
+n = 1
+
+ireland_data_2000F <- ireland_data_2000F %>%
+   mutate(
+    nLx_prev = lag(Female_Lx, default = NA),   # nL_{(x - n)}
+    nFx_prev = lag(Female_Pop, default = NA), # nN_{(x - n)}^F
+    term1 = Female_ASFR * n * (1/ (2)),
+    term2 = Female_ASFR * n * ((1 * (Female_Lx / nLx_prev)) / (2)),
+    # gets rid of NAs
+    nBx = ifelse(is.na(nLx_prev) | is.na(nFx_prev), 0, (term1 + term2)*ireland_data_2000F$survivorship[1])  
+  )
+
+ireland_data_2000F[is.na(ireland_data_2000F)] = 0
+
+```
+
+```{r graph the births just to see 2c, eval=TRUE, echo=TRUE, warning =FALSE}
+
+fertility_row <- ireland_data_2000F$nBx
+ireland_leslie_matrix[1, ] <- fertility_row
+
+ggplot(ireland_data_2000F, aes(x = as.numeric(Age), y = nBx)) +
+  geom_line(color = "seagreen", linewidth = 1) +
+  geom_point(color = "seagreen", size = .85) +
+  labs(
+    title = "Births per Female Age (Ireland, 2000)",
+    x = "Age",
+    y = "Births (nBx)"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 110, by = 5))
+
+```
+
+## (d) 5 points
+
+**What remaining dataset is necessary to implement the cohort component
+projection method?**
+
+The population of Ireland in 2000, which we will transform linearly
+using the leslie matrix. This data is in the Female_Pop column, which
+has this distribution:
+
+```{r graph the population distribution just to see 2d, eval=TRUE, echo=TRUE, warning = FALSE}
+
+ggplot(ireland_data_2000F, aes(x = as.numeric(Age), y = Female_Pop)) +
+  geom_line(color = "seagreen", linewidth = 1) +
+  geom_point(color = "seagreen", size = .85) +
+  labs(
+    title = "Female Population Composition (Ireland, 2000)",
+    x = "Age",
+    y = "Population"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 105, by = 5))
+
+```
+
+## (e) 5 points
+
+**Create your full Leslie matrix and project forward your population in
+5 and 25 years.**
+
+In order to project forward 5 years and 25 years, we will need to
+transform the data 5 times and 25 times, rather than once and five
+times, if the data had been in 5x5 groups and intervals.
+
+```{r create CCP function 2e, eval=TRUE, echo=TRUE}
+
+project_population = function(matrix, input_data, years_list) {
+  #must convert to matrix otherwise it throws an error
+  n_vector <- as.matrix(input_data)
+  num_age_groups <- nrow(matrix)
+  
+  if (length(n_vector) != num_age_groups) {
+    stop("Population vector length must match the number of rows in the Leslie matrix.")
+  }
+  
+  ireland_projection <- data.frame(Age = ireland_data_2000F$Age)
+  
+  for (years in years_list) {
+    temp_vector <- n_vector
+    for (i in 1:years) {
+      temp_vector <- matrix %*% temp_vector
+    }
+    ireland_projection[[paste0("Projection_", years, "_years")]] <- as.numeric(temp_vector)
+  }
+  
+  return(ireland_projection)
+}
+
+years_to_project = c(5, 25, 50, 100, 150, 200)
+ireland_population_projections = project_population(ireland_leslie_matrix, ireland_data_2000F$Female_Pop, years_to_project)
+
+```
+
+## (f) 5 points
+
+**Create two population pyramids with the present day age structure on
+the left side and the projected age structure on the right, i.e. one
+plot will have the 5-year projection on the right and the other will
+have the 25-year projection on the right. Hint: See the R Lab 4
+materials if you have not made a population pyramid before.**
+
+**This homework uses code from R Lab 3 to construct the population
+pyramid.**
+
+```{r preprocess plotting data 2f, eval=TRUE, echo=TRUE}
+
+plot_ireland_2000 <- ireland_data_2000F %>%
+  select(Age, Female_Pop) %>%
+  mutate(Year = "2000") %>%
+  mutate(Age = as.numeric(Age)) %>%
+  mutate(Year = as.numeric(Year)) %>% 
+  mutate(Pop_plot = -Female_Pop/sum(Female_Pop))
+
+plot_ireland_2005 <- ireland_population_projections %>%
+  select(Age, Projection_5_years) %>%
+  rename(Female_Pop = Projection_5_years) %>%
+  mutate(Year = "2005") %>% 
+  mutate(Pop_plot = Female_Pop/sum(Female_Pop)) %>%
+  mutate(Age = as.numeric(Age)) %>%
+  mutate(Year = as.numeric(Year))
+
+plot_ireland_2025 <- ireland_population_projections %>%
+  select(Age, Projection_25_years) %>%
+  rename(Female_Pop = Projection_25_years) %>%
+  mutate(Year = "2025") %>% 
+  mutate(Pop_plot = Female_Pop/sum(Female_Pop)) %>%
+  mutate(Age = as.numeric(Age)) %>%
+  mutate(Year = as.numeric(Year))
+
+plot1_data = bind_rows(plot_ireland_2000, plot_ireland_2005)
+plot2_data = bind_rows(plot_ireland_2000, plot_ireland_2025)
+
+```
+
+```{r plot first pop pyramid 2e, eval=TRUE, echo=TRUE}
+# First Pyramid (2000 vs. 2005)
+ggplot(plot1_data, aes(x = Age, y = Pop_plot, fill = as.factor(Year))) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(
+    breaks = seq(0, max(plot1_data$Age), by = 10)
+  ) +
+  coord_flip() +  # Flip coordinates to make the bar plot horizontal
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 10),
+    legend.title = element_blank(),
+    panel.grid.major = element_blank()
+  ) +
+  labs(
+    x = "Age Group", y = "Female Population Porportion",
+    fill = "Year", title = paste("Ireland Female Population Pyramid (", 2000, " vs. ", 2005, ")", sep = "")
+  ) +
+  scale_fill_manual(values = c("2000" = "slateblue", "2005" = "steelblue"))
+```
+
+```{r plot second pop pyramid 2e, eval=TRUE, echo=TRUE}
+# Second Pyramid (2000 vs 2025)
+ggplot(plot2_data, aes(x = as.numeric(Age), y = Pop_plot, fill = as.factor(Year))) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(
+    breaks = seq(0, max(plot2_data$Age), by = 10)
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 10),
+    legend.title = element_blank(),
+    panel.grid.major = element_blank()
+  ) +
+  labs(
+    x = "Age Group", y = "Female Population Porportion",  # x is Age, y is Female Population proportion
+    fill = "Year", title = paste("Ireland Female Population Pyramid (", 2000, " vs. ", 2025, ")", sep = "")
+  ) +
+  scale_fill_manual(values = c("2000" = "slateblue", "2025" = "steelblue"))
+
+```
+
+# Problem 3: Finding the Stable Equivalent Population -- 30 points
+
+**Using the same country and 5-year period you used in Problem 2, let's
+project forward using the Leslie matrix until we see stability in the
+female age structure of the population.**
+
+Concepts and formulas from [this
+resource](https://hanowell.github.io/uwsoc533a/stable-population-model.html)
+written by Ben Hanowell and [this
+resource](https://grodri.github.io/demography/stablepop) written by
+Germán Rodríguez were integral in drafting the following answers. No
+code from either website was implemented in this homework.
+
+To do this problem we must assume the population is stationary.
+
+## (a) 10 points
+
+**Using the cohort component projection method, project forward the
+population from your starting 5-year period 50, 100, 150, and 200 years.
+Make figures like in Problem 2(f) for each of these projections. Comment
+on whether it appears the stable equivalent population implied by your
+chosen fertility and mortality rates has been reached.**
+
+These pyramid plots are created normalizing the amount of each
+population with the Pop_proportion column, which helps in comparing the
+projections to one another.
+
+```{r plot rest of the pyramids 3a, eval=TRUE, echo=TRUE}
+preplot_process = function(base_data, projections, years_to_project) {
+  #year 2000 data
+  base_plot = base_data %>%
+    select(Age, Female_Pop) %>%
+    mutate(
+      Year = 2000,
+      Age = as.numeric(Age),
+      Pop_plot = -Female_Pop,
+      Pop_proportion = -Female_Pop / sum(Female_Pop)
+    )
+  
+  process_projection = function(year) {
+    year_col = paste0("Projection_", year, "_years")
+    
+    projections %>%
+      select(Age, all_of(year_col)) %>%
+      rename(Female_Pop = all_of(year_col)) %>%
+      mutate(
+        Year = as.numeric(2000 + year),
+        Age = as.numeric(Age),
+        Pop_plot = Female_Pop,
+        Pop_proportion = Female_Pop / sum(Female_Pop)
+      )
+  }
+  
+  dataframes_for_plotting = lapply(years_to_project, function(year) {
+    projected_data <- process_projection(year)
+    bind_rows(base_plot, projected_data)  # Combine with 2000 data
+  })
+  
+  names(dataframes_for_plotting) <- paste0("plot", years_to_project, "_data")
+  
+  return(dataframes_for_plotting)
+}
+
+dataframes_for_plotting = preplot_process(ireland_data_2000F, ireland_population_projections, years_to_project) 
+
+pyramid_plot = function(data, year1, year2) {
+  ggplot(data, aes(x = Age, y = Pop_proportion, fill = as.factor(Year))) +
+    geom_bar(stat = "identity", position = "identity") +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.01)  # Convert to percentage format
+    ) +
+    scale_x_continuous(
+      breaks = seq(0, max(data$Age), by = 10)
+    ) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 12, face = "bold"),
+      legend.title = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    ) +
+    labs(
+      x = "Age Group",
+      y = "Population Proportion",
+      fill = "Year",
+      title = paste("Ireland Female Population Proportions (", year1, " vs. ", year2, ")", sep = "")
+    ) +
+    scale_fill_manual(values = setNames(c("slateblue", "goldenrod"), c("2000", as.character(year2))))
+}
+
+years_projected = c(2005, 2025, 2050, 2100, 2150, 2200)
+pyramid_plots = list()
+
+# This saves the plots to a list just in case
+for (year in years_projected) {
+  data_name = paste0("plot", year - 2000, "_data")
+  pyramid_plots[[as.character(year)]] <- pyramid_plot(dataframes_for_plotting[[data_name]], 2000, year)
+}
+
+# print all plots
+for (year in years_projected) {
+  print(pyramid_plots[[as.character(year)]])
+}
+
+```
+
+## (b) 5 points
+
+What extra information do you need to find a good starting value for
+estimation of the intrinsic growth rate, $r$? What dataset is that
+contained in? Find a starting value, $r_0$.
+
+To find a good estimation for $r_0$ we need the same information needed
+to calculate the Net Reproductive Rate (NRR). This includes fertility
+and mortality data.
+
+**This answer includes code from HW #3:**
+
+The Period Net Reproductive Rate (NRR) can be calculated as:
+
+$$ NRR = \frac{ \sum_{x}{_{n}F_{x}^{F}  \times _{n}L_{x}^{F}} }{ l_{0} } $$
+
+We also know that this is a table for women, specifically. This means
+that any $_{n}L_{x}$ is already a female-specific $_{n}L_{x}^{F}$.
+
+```{r NRR and mu 3b, eval=TRUE, echo=TRUE}
+
+ireland_data_2000F$Age <- as.numeric(ireland_data_2000F$Age)
+
+NRR = sum( ireland_data_2000F$Female_ASFR * ireland_data_2000F$Female_Lx / ireland_data_2000F$Female_lx[1] )
+
+# assumes n = 1
+midpoint_x = ireland_data_2000F$Age + (.5)
+
+mu_numerator = sum(ireland_data_2000F$Female_ASFR * ireland_data_2000F$Female_Lx * midpoint_x)
+mu_denominator = sum(ireland_data_2000F$Female_ASFR * ireland_data_2000F$Female_Lx)
+
+mu = mu_numerator / mu_denominator
+
+cat("The Net Reproductive Rate (NRR) is", round(NRR, 2),"\n")
+cat("The synthetic cohort mean age at childbearing μ is", round(mu, 2))
+
+```
+
+Since the Net Reproductive Rate (NRR) is above 1 this means the
+population of Female individuals in Ireland is growing in the year 2000.
+
+We can use r's relationship with the NRR to derive Lotka's r, the
+intrinsic growth rate. In doing so we assume that:
+
+1\. Age specific death rates are constant over time, but not necessarily
+across age-groups
+
+2\. Age specific fertility rates are constant over time, but not
+necessarily across age-groups
+
+3\. Age specific net migration rates are zero, and in this case, we have
+been assuming this is a closed population.
+
+We know $NRR = e^{r*T}$ where $T \approx \frac{A_{B} + \mu}{2}$ but
+instead of finding $A_{B}$ we can follow the literature and assume
+$T = 28$, because $\mu$ is a bit on the higher side.
+
+```{r initial r 3b, eval=TRUE, echo=TRUE}
+t = 28
+r_0 = log(NRR, base = exp(1)) / t
+r_0
+```
+
+This initial estimate for r is very small and non-negative, thus
+the population is decreasing.
+
+## (c) 5 points
+
+Use your answer from (b) to implement the iterative method described in
+Box 7.1 of the \textit{Demography} textbook and in Lecture 13 to find a
+good estimate of the intrinsic growth rate, $r$, of the stable
+equivalent population.
+
+We can iteratively guess r using this formula:
+
+let:
+$$y(\rho_{n}) = \sum_{a = 0}^\infty e^{-r_{n} \times (a + \frac{n}{2})} \times \frac{_{n}L_{a}^F}{l_{0}^F} \times _{n}F_{a}^F $$
+
+**Lotka's r is the value such that** $y(r_{n}) \approx 1$
+
+given some guess of $\rho_{n}$ for $n = \text{number of iterations}$
+
+where we have: $$\rho_{0} = \text{initial guess above}$$
+
+and $$\rho_{n+1} = \frac{y(\rho_{n} - 1)}{28}$$ for each subsequent
+guess.
+
+Ideally, we iterate this process until $y(\rho_{n}) \approx 1$ because
+this follows from the relationships:
+
+$$ NRR = \int_{\alpha}^\beta p(a) \times m(a) da $$ and
+
+$$ 1 = \int_{\alpha}^\beta e^{-ra} \times p(a) \times m(a) da$$
+
+```{r estimate lotkas r for observed ireland data 3c, eval=TRUE, echo=TRUE}
+estimate_r_and_plot <- function(initial_r, max_iter = 10, tolerance = 1e-6) {
+  r_values <- numeric(max_iter)
+  r_n <- initial_r
+  
+  for (i in 1:max_iter) {
+    # Compute y(r_n) assume n = 1
+    y_rn <- sum(exp(-r_n * (ireland_data_2000F$Age + 1/2)) * 
+                  (ireland_data_2000F$Female_Lx / ireland_data_2000F$Female_lx[1]) * 
+                  ireland_data_2000F$Female_ASFR)
+    
+    # Compute next estimate r_{n+1}
+    r_next = r_n + (y_rn - 1) / 28
+    r_values[i] = r_next
+
+    # Check for convergence
+    if (abs(y_rn - 1) < tolerance) {
+      cat("Converged at iteration", i, "with r =", r_n, "\n")
+      r_values = r_values[1:i]
+      
+      break
+    }
+    # Update r_n for next iteration
+    r_n <- r_next 
+
+  }
+  
+  # If it reached max iterations without converging
+  if (abs(y_rn - 1) >= tolerance) {
+    cat("Failed to converge after", max_iter, "iterations.\n")
+  }
+
+  # Plot convergence of r values
+  plot(1:length(r_values), r_values, type = "o", pch = 16, col = "cadetblue3",
+       xlab = "Iteration", ylab = "r Value", 
+       main = "Convergence of Intrinsic Growth Rate (r)")
+  abline(h = r_values[length(r_values)], col = "darkorchid4", lty = 5)
+
+}
+
+estimate_r_and_plot(r_0)
+
+r_n = -0.003374234
+# 0.007271872 
+```
+
+This algorithm needs only be iterated a few times (scale of 1e1) because
+the initial guess is already adequate. Tuning Lotka's r only takes a few
+iterations because the initial r is so well-guessed.
+
+## (d) 10 points
+
+Calculate the age structure of the stable equivalent population.
+
+Present a population pyramid with the age structure in the same period
+as the rates that imply our stable equivalent population on the left and
+the age structure calculated in (c).
+
+Present a second plot comparing the age structure of the population
+projected out 200 years from (a) to the stable equivalent age structure.
+Comment on these figures.
+
+**This answer uses code to derive b and the nCx's from the Lecture 14
+demo provided by Jess Godwin:**
+
+We can use the formulas to get the **stable crude birth rate**,
+$$b = \dfrac{1}{\sum_{0,n}^{\omega} e^{-r(a+n/2)}\frac{{_nL_a}}{l_0}}$$
+
+And the **stable age structure**,
+$${_nC_a} = b\times e^{-r(a+n/2)}\frac{{_nL_a}}{l_0}$$
+
+```{r create stable equivalent age composition 3d, eval=TRUE, echo=TRUE}
+
+ireland_data_2000F = ireland_data_2000F %>% 
+  mutate(Age = as.numeric(Age))
+
+b = ireland_data_2000F %>% 
+  mutate(l0 = ireland_data_2000F$Female_lx[1], r = -0.003374234, n = 1,
+         term = exp(-r*(ireland_data_2000F$Age + (n/2)))*(ireland_data_2000F$Female_Lx/l0)) %>%
+  pull(term) %>% sum()
+
+b <- 1/b
+
+# create the stable population age compositions using lotka's r and b
+stable_age_composition = ireland_data_2000F %>% 
+  select(Age) %>% 
+  mutate(nCx_stable = b * exp(-r_n*(ireland_data_2000F$Age + n/2)) * ((ireland_data_2000F$Female_Lx)/(ireland_data_2000F$Female_lx[1]))) %>% 
+  mutate(nCx_observed = (ireland_data_2000F$Female_Pop) / sum(ireland_data_2000F$Female_Pop))
+
+```
+
+```{r pop pyramid for stable equivalent age composition 3d, eval=TRUE, echo=TRUE}
+
+# repeat pre-processing for pop pyramid as in problem #3:
+stable_data <- stable_age_composition %>%
+  select(Age, Pop_plot = nCx_stable) %>% 
+  mutate(type = "Stable Composition Estimates")
+
+observed_data <- stable_age_composition %>%
+  select(Age, Pop_plot = nCx_observed) %>%
+  mutate(Pop_plot = -Pop_plot) %>% 
+  mutate(type = "Observed Composition Estimates")
+
+sac_plot_data = bind_rows(stable_data, observed_data)
+
+ggplot(sac_plot_data, aes(x = Age, y = Pop_plot, fill = as.factor(type))) +
+    geom_bar(stat = "identity", position = "identity") +
+    scale_y_continuous(
+      labels = abs) +
+    scale_x_continuous(
+      breaks = seq(0, max(sac_plot_data$Age), by = 10)
+    ) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 12, face = "bold"),
+      legend.title = element_blank(),
+      panel.grid.major = element_blank()) +
+    labs(
+      x = "Age Group",
+      y = "Proportion",
+      fill = "type",
+      title = paste("Observed Composition Estimates vs. Stable Composition Estimates")
+    ) +
+    scale_fill_manual(values = setNames(c("slateblue", "cadetblue3"), c("Observed Composition Estimates", "Stable Composition Estimates")))
+
+```
+
+```{r comparison pop pyramid for 200 yr projection vs. stable equivalent age composition 3d, eval=TRUE, echo=TRUE}
+
+# repeat pre-processing for pop pyramid as in problem #3:
+projected_200_data <- ireland_population_projections %>%
+  mutate(Pop_plot = -Projection_200_years / sum(Projection_200_years)) %>%
+  select(Age, Pop_plot) %>%
+  mutate(type = "200-year Projection Composition Estimates") %>%
+  mutate(Age = as.numeric(Age))
+
+stable_data <- stable_data %>%
+  mutate(Age = as.numeric(Age))
+
+projection_sac_plot_data = bind_rows(projected_200_data, stable_data) 
+
+ggplot(projection_sac_plot_data, aes(x = Age, y = Pop_plot, fill = as.factor(type))) +
+    geom_bar(stat = "identity", position = "identity") +
+    scale_y_continuous(
+      labels = abs) +
+    scale_x_continuous(
+      breaks = seq(0, max(projection_sac_plot_data$Age), by = 10)
+    ) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.title = element_text(size = 12, face = "bold"),
+      legend.title = element_blank(),
+      panel.grid.major = element_blank()) +
+    labs(
+      x = "Age Group",
+      y = "Proportion",
+      fill = "type",
+      title = paste("Population Compositions: 200-year Projection vs. Stable Estimates")
+    ) +
+    scale_fill_manual(values = setNames(c("goldenrod", "cadetblue3"), c("200-year Projection Composition Estimates", "Stable Composition Estimates")))
+
+```
+
+These values are incredibly similar, let's plot just how similar they
+are to see what the trend looks like:
+
+```{r plot absolute differences just to see 3d, eval=TRUE, echo=TRUE, warning=FALSE}
+
+abs_diff_data = data.frame(
+  Age = projection_sac_plot_data$Age[1:110], 
+  abs_diff = abs(abs(projection_sac_plot_data$Pop_plot[1:110]) - abs(stable_data$Pop_plot[1:110]))
+)
+
+ggplot(abs_diff_data, aes(x = as.numeric(Age), y = abs_diff)) +
+  geom_line(color = "seagreen", linewidth = 1) +
+  geom_point(color = "seagreen", size = .85) +
+  labs(
+    title = "Absolute Difference: Stable vs. 200-year Projection Estimates",
+    x = "Age",
+    y = "Absolute Difference"
+  ) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 110, by = 5))
+
+```
+
+Interesting, the differences between the stable estimates and projected
+estimates have no discernible pattern anymore, but there is a sharp normally-distributed spike in the older populations, leading me to believe this is where the population counts are imputed by a model hosted by the HMD.
+
+# Problem 4: Impact of Demographic Change -- 20 points
+
+Now, let's look at how demographic changes might impact our stable
+equivalent population derived in Problem 3.
+
+## (a) 5 points
+
+Calculate the mean age of the stable equivalent population, $A_P$, for
+the population in Problem 3. **Note:** On pg. 156 of
+\textit{Demography}, the following formula is provided:
+$$A_P = \dfrac{ \int_{0}^{\omega} ac(a)da}{\int_0^{\omega} c(a)da}$$
+
+The discrete analogue of this formula is
+$$A_P = \dfrac{\sum_{a = 0,n}^{\omega} (a+n/2) \times {_nC_a}}{\sum_{a = 0,n}^{\omega} {_nC_a}}$$
+
+```{r calculate average age of SEP 4a, eval=TRUE, echo=TRUE}
+A_p = (sum( (stable_age_composition$Age + n/2) * stable_age_composition$nCx_stable) ) / sum(stable_age_composition$nCx_stable)
+
+cat("The mean age of the stable equivalent population is", round(A_p, 2), "years old.")
+```
+
+## (b) 5 points
+
+What is the $NRR$ for your stable equivalent population? If fertility
+returned to replacement level in your stable equivalent population, what
+would happen to the ${_nC_a}$ for ages $a$ below the mean age of the
+population, $A_P$? What would happen to the ${_nC_a}$ for ages $a$ above
+the mean age of the population, $A_P$?
+
+$NRR = e^{rT}$, where $r = \text{lotka's r}$ and $T = 28$. Therefore,
+the stable equivalent population NRR is:
+
+```{r stable equivalent pop NRR 4b, eval=TRUE, echo=TRUE}
+# 0.007271872
+NRR_stable = exp(-0.003374234*t)
+
+cat("The stable equivalent population NRR is:", round(NRR_stable, 4), "whereas the observed population NRR is:", round(NRR, 4))
+```
+
+My stable equivalent population has a Lotka's r of $-0.003374234$ and NRR
+of $0.9098$, which means that the population is not growing.
+
+If the NRR were to rise from the stable equivalent population NRR of
+0.98 to 1.00, then the younger cohorts would replace themselves, and then some. This
+would increase the proportion of people below the mean age of the
+population, which would increase fertility rates, which would decrease
+the relative proportion of the proportion of people above the mean age
+of the population, thus creating a younger population.
+
+In the long-term there would also be a decrease in the number of people
+below the mean age of the population, because more people would subject to the force of fertility and mortality in those age groups as time passes, and the youngest "baby boom" would age up, causing an aging in the population.
+
+## (c) 10 points
+
+Using the current $NRR$ from (b), you can calculate a scaling factor of
+$1/NRR$ to apply to each ${_nF_a^{f}}$ to create $m^{\star}(a)$ values
+that yield a $NRR$ of 1.
+
+Then, calculate the scaling factor, the new NRR, the new $r$, and the
+new $m^{\star}(a)$ based on the underlying age-specific fertility rates
+used in the column `Female_ASFR` from the dataframe
+"ireland_data_2000F".
+
+**This answer uses concepts from the Lecture 14 demo provided by Jess
+Godwin to compute the stable equivalent population scaling factor, new
+NRR, new fertility rates, and new r:**
+
+We know that:
+
+(1) $$ NRR = \int_{\alpha}^\beta p(a) \times m(a) da $$ and
+
+(2) $$ 1 = \int_{\alpha}^\beta e^{-ra} \times p(a) \times m(a) da$$
+
+We want to calculate the new NRR scaling factor, the new NRR, and new
+Lotka's r.
+
+```{r calculate new lotkas r based on m-stars 4c, eval=TRUE, echo=TRUE}
+
+tolerance = 1e-6
+max_iter = 10
+NRR_scale = 1 / NRR_stable
+
+# Apply the scaling factor to the fertility rates (make m-stars)
+ireland_data_2000F$m_star = ireland_data_2000F$Female_ASFR * NRR_scale
+
+# Recalculate the intrinsic growth rate r using the new fertility rates
+# make an empty vector for the possible lotka's r values
+r_values = numeric(max_iter)
+
+for (i in 1:max_iter) {
+  # Compute y(r_n) using the adjusted fertility rates
+  # take a guess, I used the old r_n from earlier in the code
+  y_rn = sum(exp(-r_n * (ireland_data_2000F$Age + 1/2)) * 
+                (ireland_data_2000F$Female_Lx / ireland_data_2000F$Female_lx[1]) * 
+                ireland_data_2000F$m_star)
+  
+  # Compute next estimate r_{n+1}
+  r_next = r_n + (y_rn - 1) / 28
+  r_values[i] = r_next
+  
+  # Check for convergence
+  if (abs(y_rn - 1) < tolerance) {
+    r_values = r_values[1:i]
+    break
+  }
+  r_n = r_next 
+}
+
+# If it reached max iterations without converging
+if (abs(y_rn - 1) >= tolerance) {
+  cat("Failed to converge after", max_iter, "iterations.\n")
+}
+
+ireland_data_2000F$m_star_new = ireland_data_2000F$m_star
+
+# Sanity check: NRR for the adjusted fertility rates (using m-stars) should be close to 1
+NRR_new = sum(ireland_data_2000F$Female_Lx / ireland_data_2000F$Female_lx[1] * ireland_data_2000F$m_star)
+
+
+plot(1:length(r_values), r_values, type = "o", pch = 16, col = "cadetblue3",
+     xlab = "Iteration", ylab = "r Value", 
+     main = "Convergence of Intrinsic Growth Rate (r)")
+abline(h = r_values[length(r_values)], col = "darkorchid4", lty = 5)
+
+cat("Reciprocal of the stable equivalent population NRR:", round(NRR_scale, 4), "\n")
+cat("Re-calculated Lotka's r:", format(round(r_values[length(r_values)], 6), scientific= FALSE), "\n")
+cat("Re-calculated NRR based on the m-star fertility rates:", round(NRR_new, 4), "\n")
+```
+
+The new NRR is closer to 1 than the NRR calculated from observed data or even from the stable equivalent population, but is still below 1. This is congruent with wanting to select the values in this system that would make the NRR closer to 1, aka replacement level. Our new m-star fertility values represent the fertility values for this population that would lead to exact replacement.
