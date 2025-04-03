@@ -1,0 +1,1186 @@
+---
+title: "Kilpatrick_Sarah_HW2"
+author: "Sarah Kilpatrick"
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven) 
+library(dplyr) 
+library(tidyr)
+library(knitr)
+library(wpp2024)
+library(kableExtra)
+```
+
+# Problem 1: Estimating the a cohort life table - 30 points
+
+We will use the Demographic & Health Surveys model births record dataset, ZZBR62FL.DTA for this problem. Download full model datasets here. See the Recode manual here. Variables:
+
+-   caseid - unique identifier of the child’s mother
+
+-   bidx - unique identifier of children for a given caseid
+
+-   v006 - interview month
+
+-   v007 - interview year
+
+-   b1 - birth month
+
+-   b2 - birth year
+
+-   b5 - indicator child was alive at time of interview
+
+-   b7 - child age in months at death
+
+-   v025 - whether the surveyed household was stratified as urban or
+    rural; 1 is "urban" and 2 is "rural" 
+
+```{r births, eval=TRUE, echo=TRUE}
+births <- read_dta("~/Documents/CSDE 533 Homeworks/ZZBR62FL.DTA") %>% 
+  select(caseid, bidx, v006, v007, b1, b2, b5, b7,v025)
+# births
+
+kable(births, 
+      col.names = c("Case ID - Mother", "bidx - Child ID", "v006 - Interview Month", "v007 - Interview Year", "b1 - Birth Month", "b2 - Birth Year", "b5 - Child Alive @ Interview", "b7 - Child Age in Mo. @ Death", "v025 - Urban/Rural Surveyed Household"),
+      digits = 2,
+      caption = "Raw Dataset - Births") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+(a) **5 points** Fill in the $x$, $n$, $l_{x}$ and $_{n}d_{x}$ columns of the cohort life tables for the first 5 years of life by urban/rural status for the 1993 cohort. Present your answers in two tables.
+
+I am assuming this cohort life table will have one year increments by months (n = 12), from 0 to 5 (x-values will be [0, 12, 24, 36, 48]) and with a total population as the total # of rows (independent records of children). I am assuming this is a closed population with no in- or out-migration.
+
+```{r create urban/rural early childhood 1993, eval=TRUE, echo=TRUE}
+
+early_childhood_1993 = births %>% 
+  filter(b2 == 1993)
+
+urban_early_childhood_1993 = early_childhood_1993 %>%
+   filter(v025 == 1)
+
+ rural_early_childhood_1993 = early_childhood_1993 %>%
+   filter(v025 == 2)
+
+ # dim(urban_early_childhood_1993)
+ # dim(rural_early_childhood_1993)
+```
+
+urban data: 
+```{r urban life table early childhood 1993, eval=TRUE, echo=TRUE}
+x_values <- seq(0, 48, by = 12)  
+n = 12
+l_x_values = c(nrow(urban_early_childhood_1993), rep(NA, length(x_values) - 1))
+
+d_x_values = rep(NA, length(x_values))
+# n_x_values = rep(NA, length(x_values))
+
+urban_life_table = data.frame(x = x_values, n, l_x = l_x_values, n_d_x = d_x_values)
+```
+
+rural data: 
+```{r rural life table early childhood 1993, eval=TRUE, echo=TRUE}
+x_values <- seq(0, 48, by = 12)  
+n = 12
+l_x_values = c(nrow(rural_early_childhood_1993), rep(NA, length(x_values) - 1))
+
+d_x_values = rep(NA, length(x_values))
+# n_x_values = rep(NA, length(x_values))
+
+rural_life_table = data.frame(x = x_values, n, l_x = l_x_values, n_d_x = d_x_values)
+```
+
+
+Urban data:
+```{r urban n_d_x, eval=TRUE, echo=TRUE}
+# 0, 12, 24, 36, 48 not inclusive of 60.
+
+urban_deaths_list <- list()
+
+x_values = seq(0, 60, by = 12)  
+d_x_values = numeric(length(x_values) - 1) 
+
+for (i in 1:(length(x_values) - 1)) {
+  lower_bound = x_values[i]
+  upper_bound = x_values[i + 1]
+  
+  # Counts deaths in the current age interval
+  d_x_values[i] = urban_early_childhood_1993 %>%
+    filter(b7 >= lower_bound & b7 < upper_bound) %>%
+    nrow()
+  
+  urban_deaths_list[[paste0("deaths_", lower_bound, "_", upper_bound - 1)]] <- urban_early_childhood_1993 %>%
+    filter(b7 >= lower_bound & b7 < upper_bound)
+  }
+
+urban_life_table$n_d_x = d_x_values
+```
+
+rural data: 
+```{r rural n_d_x, eval=TRUE, echo=TRUE}
+# 0, 12, 24, 36, 48 not inclusive of 60.
+
+rural_deaths_list <- list()
+
+x_values = seq(0, 60, by = 12)  
+d_x_values = numeric(length(x_values) - 1) 
+
+for (i in 1:(length(x_values) - 1)) {
+  lower_bound = x_values[i]
+  upper_bound = x_values[i + 1]
+  
+  # Counts deaths in the current age interval
+  d_x_values[i] = rural_early_childhood_1993 %>%
+    filter(b7 >= lower_bound & b7 < upper_bound) %>%
+    nrow()
+  
+  rural_deaths_list[[paste0("deaths_", lower_bound, "_", upper_bound - 1)]] <- rural_early_childhood_1993 %>%
+    filter(b7 >= lower_bound & b7 < upper_bound)
+  }
+
+rural_life_table$n_d_x = d_x_values
+```
+
+
+
+Urban Data:
+```{r urban l_x, eval=TRUE, echo=TRUE}
+for (n in 1:(nrow(urban_life_table) - 1)) {
+  # Creates a new value in the (n+1)th row with the difference (l_x - n_d_x) of the previous row
+  urban_life_table$l_x[n + 1] = urban_life_table$l_x[n] - urban_life_table$n_d_x[n]
+  
+}
+
+# life_table
+
+kable(urban_life_table, 
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group"),
+      digits = 2,
+      caption = "Urban 1993 Cohort Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+Rural Data:
+```{r rural l_x, eval=TRUE, echo=TRUE}
+for (n in 1:(nrow(rural_life_table) - 1)) {
+  # Creates a new value in the (n+1)th row with the difference (l_x - n_d_x) of the previous row
+  rural_life_table$l_x[n + 1] <- rural_life_table$l_x[n] - rural_life_table$n_d_x[n]
+  
+}
+
+# life_table
+
+kable(rural_life_table, 
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group"),
+      digits = 2,
+      caption = "Rural 1993 Cohort Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+– Hint: it may be useful to measure time in months so that $n = 12$. Please state in your solution whether you are measuring age and time in years or months.
+
+(b) **5 points** Calculate the $_{n}L_{x}$, $_{n}M_{x}$, and $_{n}q_{x}$ columns. Present your answers in two tables.
+
+$_{n}L_{x}$ is considered the person-years (person-months, in our case) lived in ages $[x, x+n)$. It can be calculated using the following equation, where $_{n}a_{x}$ represents the average # of months (in this case, in other cases it can be years) lived by those who died in $[x, x+n)$: 
+
+$$_{n}L_{x} = (l_{x+n} \times n) + (_{n}d_{x} \times _{n}a_{x}) $$
+This involves choosing a value for $_{n}a_{x}$, which can either be assumed to be $\frac{n}{2}$, which in this case would be $_{n}a_{x} = 6$, or we can directly compute the average number of person-months lived in the interval, by members of the cohort who die in that interval. Both options are covered in Preston Ch. 3.
+
+Calculating the average may not be so complicated, but even then it may not be better than the $_{n}a_{x} = \frac{n}{2}$ approximation:
+
+urban data: 
+```{r urban n_a_x calculation}
+
+n_a_x = list()
+
+# Convert b7 column to numeric and compute the mean
+for (name in names(urban_deaths_list)) {
+
+  n_a_x[[name]] = round(mean(as.numeric(urban_deaths_list[[name]]$b7), na.rm = TRUE), 2)
+}
+perfect_halfway = c(6, 18, 30, 42, 54)
+
+output = rbind(n_a_x, perfect_halfway)
+colnames(output) <- gsub("deaths_", "", colnames(output))
+output_t = t(output)
+
+# output_t
+
+kable(output_t, 
+      col.names = c("Person-Months Observed by Directly Averaging Age in Months at Death per Age Group", "Person-Months Calculated by using n/2 Assumption"),
+      digits = 2,
+      caption = "Urban Observed n_a_x vs. Assumed n_a_x") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+rural data: 
+```{r rural n_a_x calculation}
+
+n_a_x = list()
+
+# Convert b7 column to numeric and compute the mean
+for (name in names(rural_deaths_list)) {
+
+  n_a_x[[name]] = round(mean(as.numeric(rural_deaths_list[[name]]$b7), na.rm = TRUE), 2)
+}
+perfect_halfway = c(6, 18, 30, 42, 54)
+
+output = rbind(n_a_x, perfect_halfway)
+colnames(output) <- gsub("deaths_", "", colnames(output))
+output_t = t(output)
+
+# output_t
+
+kable(output_t, 
+      col.names = c("Person-Months Observed by Directly Averaging Age in Months at Death per Age Group", "Person-Months Calculated by using n/2 Assumption"),
+      digits = 2,
+      caption = "Rural Observed n_a_x vs. Assumed n_a_x") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+I am assuming it is reasonable to choose the $_{n}a_{x} = \frac{n}{2}$ approximation because the $_{n}a_{x}$ calculated for the observed deaths "usually reinforces bias already present in the data subject to age-distributional anomalies" (pg. 44, Preston). While we know that the $_{n}a_{x} = \frac{n}{2}$ approximation is insufficient for the early years, I argue that it is still better than the observed approximation, since we do not know the rest of the population's distribution, only that of the children in this survey, using the observed $_{n}a_{x}$ would be less ideal than the overall assumption that $_{n}a_{x} = \frac{n}{2}$.
+
+I am also assuming that none of the mothers (survey respondees) died or moved away during this interview's survey period. I assume that if an individual dies, they die at the end of the month recorded in column b7 
+
+urban data: 
+```{r add n_a_x to urban lifetable}
+urban_life_table$n_a_x <- perfect_halfway
+```
+
+rural data: 
+```{r add n_a_x to rural lifetable}
+rural_life_table$n_a_x <- perfect_halfway
+```
+
+Urban data: 
+```{r add n_L_x to urban life table}
+# Initialize the n_L_x column with NA values
+urban_life_table$n_L_x = NA
+
+# Computes n_L_x using the above formula
+for (i in 1:(nrow(urban_life_table) - 1)) {
+  
+  urban_life_table$n_L_x[i] = ( urban_life_table$l_x[i + 1] * 12) + ( urban_life_table$n_d_x[i] * urban_life_table$n_a_x[i] )
+}
+
+# Handles the last row
+urban_life_table$n_L_x[nrow(urban_life_table)] = urban_life_table$l_x[nrow(urban_life_table)] * 12
+
+```
+
+
+$$_{n}L_{x} = (l_{x+n} \times n) + (_{n}d_{x} \times _{n}a_{x}) $$
+rural data: 
+```{r add n_L_x to life table}
+# Initialize the n_L_x column with NA values
+rural_life_table$n_L_x = NA
+# rural_life_table
+
+# Computes n_L_x using the above formula
+for (i in 1:(nrow(rural_life_table) - 1)) {
+  
+  rural_life_table$n_L_x[i] = ( rural_life_table$l_x[i + 1] * 12) + ( rural_life_table$n_d_x[i] * rural_life_table$n_a_x[i] )
+}
+
+# Handles the last row
+rural_life_table$n_L_x[nrow(rural_life_table)] = rural_life_table$l_x[nrow(rural_life_table)] * 12
+```
+
+$_{n}M_{x}$ is the cohort age-specific mortality rate for ages $[x, x+n)$ and is represented by the ratio between $_{n}d_{x}$ and $_{n}L_{x}$: 
+
+$$ _{n}M_{x} = \frac{_{n}d_{x}}{_{n}L_{x}} $$
+
+Urban data:
+```{r add n_M_x to urban life table}
+# Initialize the n_M_x column with NA values
+urban_life_table$n_M_x = NA
+
+for (i in 1:(nrow(urban_life_table))) {
+
+  urban_life_table$n_M_x[i] = round(urban_life_table$n_d_x[i] / urban_life_table$n_L_x[i], 5)
+  
+}
+```
+
+Rural data:
+```{r add n_M_x to rural life table}
+# Initialize the n_M_x column with NA values
+rural_life_table$n_M_x = NA
+
+for (i in 1:(nrow(rural_life_table))) {
+
+  rural_life_table$n_M_x[i] = round(rural_life_table$n_d_x[i] / rural_life_table$n_L_x[i], 5)
+  
+}
+```
+
+$_{n}q_{x}$ is the number of individuals that died during any given time interval ($_{n}d_{x}$) divided by the number alive at the beginning of that interval ($l_{x}$) provides an age-specific mortality rate.
+
+$$_{n}q_{x} = \frac{_{n}d_{x}}{l_{x}} $$
+Urban data
+```{r add n_q_x to urban life table}
+# Initialize the n_q_x column with NA values
+urban_life_table$n_q_x = NA
+
+for (i in 1:(nrow(urban_life_table))) {
+
+  urban_life_table$n_q_x[i] = round(urban_life_table$n_d_x[i] / urban_life_table$l_x[i], 5)
+  
+}
+
+kable(urban_life_table,
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months)", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group", "n_a_x - avg. Person-Months Lived by Those Who Died in Age Group", "n_L_x - Total Person-Months lived in Age Group", "n_M_x - Cohort Age-Specific Mortality Rate for Age Group", "n_q_x - Probability of Death in Age Group [x, x+n)"),
+      digits = 5,
+      caption = "1993 Cohort Urban Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+Rural data
+```{r add n_q_x to rural life table}
+# Initialize the n_q_x column with NA values
+rural_life_table$n_q_x = NA
+
+for (i in 1:(nrow(rural_life_table))) {
+
+  rural_life_table$n_q_x[i] = round(rural_life_table$n_d_x[i] / rural_life_table$l_x[i], 5)
+  
+}
+
+kable(rural_life_table,
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months)", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group", "n_a_x - avg. Person-Months Lived by Those Who Died in Age Group", "n_L_x - Total Person-Months lived in Age Group", "n_M_x - Cohort Age-Specific Mortality Rate for Age Group", "n_q_x - Probability of Death in Age Group [x, x+n)"),
+      digits = 5,
+      caption = "1993 Cohort Rural Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+(c) **5 points** Calculate the $T_{x}$ and $e_{x}$ columns. Present your answers in two tables.
+
+$T_{x}$ is the cumulative sum of person-months lived by individuals age $x$ onward ($_{n}L_{x}$) (from the bottom-up). For the terminal age group, we can use $T_{x}$ = $_{n}L_{x}$.
+
+$$ T_{x} = \sum_x{_{n}L_{x}} $$
+$e_{x}$ is the life expectancy in the age group interval $[x, x+n)$. It is based on person-months lived above the age group ($T_{x}$) and proportion of people alive at the start of age group. 
+
+$$ e_{x} = \frac{T_{x}}{l_{x}}$$
+urban data:
+```{r add T_x and e_x to urban life table}
+# Initialize the L_x column with NA values
+urban_life_table$T_x <- NA
+
+# Calculate T_x when the last row is T_x = n_L_x
+urban_life_table$T_x[nrow(urban_life_table)] = urban_life_table$n_L_x[nrow(urban_life_table)]  
+
+for (i in (nrow(urban_life_table) - 1):1) { 
+  urban_life_table$T_x[i] = urban_life_table$n_L_x[i] + urban_life_table$T_x[i + 1]
+}
+
+# Calculate e_x
+urban_life_table$e_x = round(urban_life_table$T_x / urban_life_table$l_x, 5)
+
+kable(urban_life_table,
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months)", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group", "n_a_x - avg. Person-Months Lived by Those Who Died in Age Group", "n_L_x - Total Person-Months lived in Age Group", "n_M_x - Cohort Age-Specific Mortality Rate for Age Group", "n_q_x - Probability of Death in Age Group [x, x+n)", "T_x - Person-months lived by individuals age-x onward", "e_x - expected months of life left"),
+      digits = 5,
+      caption = "1993 Cohort Urban Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+Rural data:
+```{r add T_x and e_x to rural life table}
+# Initialize the L_x column with NA values
+rural_life_table$T_x <- NA
+
+# Calculate T_x when the last row is T_x = n_L_x
+rural_life_table$T_x[nrow(rural_life_table)] = rural_life_table$n_L_x[nrow(rural_life_table)]  
+
+for (i in (nrow(rural_life_table) - 1):1) { 
+  rural_life_table$T_x[i] = rural_life_table$n_L_x[i] + rural_life_table$T_x[i + 1]
+}
+
+# Calculate e_x
+rural_life_table$e_x = round(rural_life_table$T_x / rural_life_table$l_x, 5)  
+
+kable(rural_life_table,
+      col.names = c("x - Age Group (in months)", "n - Width of Age Group (no. of months)", "l_x - No. of Alive Individuals of Age Group", "n_d_x - No. of Deaths in Age Group", "n_a_x - avg. Person-Months Lived by Those Who Died in Age Group", "n_L_x - Total Person-Months lived in Age Group", "n_M_x - Cohort Age-Specific Mortality Rate for Age Group", "n_q_x - Probability of Death in Age Group [x, x+n)", "T_x - Person-months lived by individuals age-x onward", "e_x - expected months of life left"),
+      digits = 5,
+      caption = "1993 Cohort Rural Life Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+(d) **5 points** What is the interpretation of $e_{0}$ in these life tables?
+
+In a cohort life table $e_{x}$ is the expected value for months lived after age x. It is the average length of life remaining for individuals born in 1993. This column assumes these individuals experience the observed age-specific mortality rate.  
+As the age groups increase, there remain fewer individuals, meaning the total sum of future life-months decreases, as one goes down the column. This column's distribution is skewed, however, by a lack of data (imposed by our filter of the first 5 years) beyond the 48 month row. This means that the estimation of $e_{0}$ becomes more unrealistic as the age groups increases.
+
+(e) **5 points** Calculate the under-five mortality rate, $_{5}q_{0}$ from both life tables. What do we learn about the risk of child mortality in urban and rural areas in this hypothetical population from comparing the values of the under-five and infant mortality across the two tables?
+
+The under-five mortality rate $_{5}q_{0}$ is the probability of dying before reaching age 5. 
+
+Preston Ch. 3 page 53 notes that: $$q(x) = 1 - p(x) = 1 - \frac{l_{0}}{l_{x}} = \frac{_{n}d_{x}}{l_{0}}$$
+
+Therefore, we can calculate $_{5}q_{0}$ assuming the same ideas that held for calculating life expectancy. We assume "the mortality experience of the population applies to an individual throughout his or her life, i.e., that at every age he or she is subjected to the mortality rates from which the life table is constructed, then the life table also illustrates the expected life experience of the individual." (pg. 52, Preston).
+
+
+```{r under-5 mortality rate, eval=TRUE, echo=TRUE}
+urban_l_0 = urban_life_table$l_x[urban_life_table$x == 0]   
+urban_l_5 = urban_life_table$l_x[urban_life_table$x == 48] 
+
+# Calculate under-five mortality rate
+urban_q_5_0 = round(1 - (urban_l_5 / urban_l_0), 4)
+
+rural_l_0 = rural_life_table$l_x[rural_life_table$x == 0]   
+rural_l_5 = rural_life_table$l_x[rural_life_table$x == 48] 
+
+# Calculate under-five mortality rate
+rural_q_5_0 = round(1 - (rural_l_5 / rural_l_0), 4)
+
+paste("In an urban setting, there is a", urban_q_5_0 *100,"% chance that a child in the cohort will die before the age of 5.")
+
+paste("In a rural setting, there is a", rural_q_5_0 *100,"% chance that a child in the cohort will die before the age of 5.")
+```
+This signals that there might be fewer resources for postpartum and early life healthcare in rural areas.
+
+(f) **5 points** Below are the results of fitting the following logistic model to the 1993 rural cohort in this data:
+
+$$ _{1}d_{x} | l_{x}, _{1}q_{x} \sim \text{Binomial}(l_{x}, _{1}q_{x}) $$
+
+$$ \log\left(\frac{{_{1}q_{x}}}{{1 - _{1}q_{x}}}\right) = \beta_{x} $$
+
+where $x = 0, 1, 2, 3, 4$ years of age, $l_{x}$ is the number of individuals surviving to their $x^{th}$ birthday, $_{1}d_{x}$ is the number who died in age $[x, x + 1)$, and each $_{1}q_{x}$ can be estimated as
+
+$$_{1}q_{x} = \frac{ e^{\hat{\beta_{x}} }} {1+e^{\hat{\beta_{x}}} } $$
+
+On the scale of $\hat{\beta_{x}}$ we can calculate a 95% confidence interval as
+
+$$ \hat{\beta_{x}} \pm 1.96 \times SE(\hat{\beta_{x}})$$
+
+On the $\hat{_{n}q_{x}}$ scale, we can take the confidence interval to be
+
+$$\Big(\frac{e^{\hat{\beta_{x}} -1.96 \times SE(\hat{\beta_{x})}}}{1+e^{\hat{\beta_{x}} -1.96 \times SE(\hat{\beta_{x})}}} , \frac{e^{\hat{\beta_{x}} +1.96 \times SE(\hat{\beta_{x})}}}{1+e^{\hat{\beta_{x}} +1.96 \times SE(\hat{\beta_{x})}}}\Big)$$
+
+Calculate the estimates of $_{1}q_{x}$ and the 95% confidence interval on the probability scale. Present your answers in a table and comment on their comparison to your estimates of the $_{1}q_{x}$’s from part (b).
+
+**Call:**
+**glm(formula = cbind(deaths, N) ~ (-1) + age, family = binomial,**
+**data = mod_dat)**
+
+**Coefficients:**
+**Estimate Std. Error z value Pr(>|z|)**
+**age[0,12) -2.0462 0.1640 -12.479 < 2e-16 *** **
+**age[12,24) -3.3429 0.3218 -10.389 < 2e-16 *** **
+**age[24,36) -3.3069 0.3220 -10.271 < 2e-16 *** **
+**age[36,48) -4.4735 0.5806 -7.705 1.31e-14 *** **
+**age[48,60) -5.0814 0.7093 -7.164 7.84e-13 *** **
+**---
+** Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1**
+
+**(Dispersion parameter for binomial family taken to be 1)**
+
+**Null deviance: 1.6332e+03 on 5 degrees of freedom**
+**Residual deviance: 9.2149e-14 on 0 degrees of freedom**
+**AIC: 29.29**
+
+**Number of Fisher Scoring iterations: 4**
+
+```{r observed vs. estimated nqx, eval=TRUE, echo=TRUE}
+# Given rural estimates and SEs from above (copy/pasted)
+beta_x = c(-2.0462, -3.3429, -3.3069, -4.4735, -5.0814)
+se_beta_x = c(0.1640, 0.3218, 0.3220, 0.5806, 0.7093)
+
+# Compute _{1}q_{x}  
+q_1_x = exp(beta_x) / (1 + exp(beta_x))
+
+# 95% CIs
+lower_q_x = exp(beta_x - 1.96 * se_beta_x) / (1 + exp(beta_x - 1.96 * se_beta_x))
+upper_q_x = exp(beta_x + 1.96 * se_beta_x) / (1 + exp(beta_x + 1.96 * se_beta_x))
+
+output = data.frame(
+  Age_Group = c("[0,1)", "[1,2)", "[2,3)", "[3,4)", "[4,5)"),
+  Beta_Estimate = round(beta_x, 4),
+  q_x = round(q_1_x, 5),
+  Lower_95CI = round(lower_q_x, 5),
+  Upper_95CI = round(upper_q_x, 5)
+)
+
+kable(output,
+      col.names = c("x - Age Group (in years)", "Estimate of Beta", "q_x", "Lower CI", "Upper CI"),
+      digits = 5,
+      caption = "q_x Estimates and 95% Confidence Intervals by Age Group") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+There is a difference between the observed $_{n}q_{x}$ values from the life table and the estimated $_{1}q_{x}$ values found using the standard logistic function. The $e^{\hat{\beta_{x}}}$ estimates directly impact the estimates for $_{1}q_{x}$, and therefore those values are model-based, not empirical.
+
+They are both similar in scale and they both decrease similarly as the age groups increase. 
+
+# Problem 2: Classifying Model Life Tables – 10 points
+
+Refer to the IUSSP’s Tools for Demographic Estimation chapter called Introduction to model life tables, and, in particular, the section titled Choosing an appropriate standard.
+
+(a) **5 points** In this section, the authors compare the 9 model life table families by 4 life table parameters. What are these parameters?
+
+The first graph visualizes Adult Mortality $_{45}q_{15}$ decreasing as Under-5 Mortality $_{5}q_{0}$ increases. The caption is titled: "Relationship between adult and under five mortality for different standard life tables with a life expectancy at birth of 60 years."
+
+$_{45}q_{15}$ is the probability that an individual who is 15 years old will die before reaching age 60 (that is, within the next 45 years).
+
+The second graph visualizes Child Mortality $_{4}q_{1}$ broadly increasing as Infant Mortality $_{1}q_{0}$ increases. The caption is titled: "Relationship between infant and child mortality for different standard life tables with a life expectancy at birth of 60 years."
+
+(b) **5 points** Create a table whose column 'name' contains the 9 families of model life tables. Include one column for each of the parameters in (a). 
+
+Fill in the four columns by classifying whether the model life table family has the median value of the column’s respective life table parameter or whether it has "High" (above median) or "Low" (below median) values.
+
+```{r init model life table family comparison, eval=TRUE, echo=TRUE}
+lt_families_comparison <- data.frame(
+  `lt_family` = c(
+    "Princeton East",
+    "Princeton North",
+    "Princeton South",
+    "Princeton West",
+    "UN Chilean",
+    "UN Far Eastern",
+    "UN General",
+    "UN Latin America",
+    "UN South Asia"
+  ),
+  `AM_45_q_15` = c("low", "median", "low", "high", "high", "high", "high", "low", "low"),
+  `U-5M_5_q_0` = c("median", "low", "high", "low", "high", "low", "low", "high", "high"),
+  `CM_4_q_1` = c("low", "high", "high", "low", "low", "low", "median", "high", "high"),
+  `IM_1_q_0` = c("high", "low", "high", "low", "high", "low", "low", "median", "high")
+)
+
+kable(lt_families_comparison, 
+      col.names = c("Life Table Families", "Adult Mortality 45_q_15", "Under-5 Mortality 5_q_0", "Child Mortality 4_q_1", "Infant Mortality 1_q_0"),
+      caption = "Life Table Families Comparison") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+# Problem 3: Estimating a period life table & using model life tables – 35 points
+
+Go to the Human Cause-of-Death Database, register for an account, and
+download the following files for a country of your choice:
+
+\- Death counts by age Short list 
+
+\- Population exposures 
+
+You may find [this documentation](https://www.mortality.org/File/GetDocument/hcd/docs/HCD_Short_list.pdf) helpful for IDC-10 codes, and [this website](https://www.who.int/data/data-collection-tools/who-mortality-database) houses documentation about other columns (sex: male == 1, female == 2, else, unspecified.)
+
+(a) **5 points** Select a single year period for which to calculate an all-cause period life table for females from your data. Calculate the columns $_{n}N_{x}$, $_{n}D_{x}$, and $_{n}M_{x}$ Present your answer in a table.
+
+I am selecting 2007, eight years after the Czech Republic joined NATO and three years after it joined the European Union. In 2007, the Czech Republic joined the Schengen Area, a region of Europe with very few border restrictions among member-countries. 
+
+It is important to remember that no single person lives the age-specific mortality described by period life table. We can interpret a period life table as the age-specific mortality a hypothetical or synthetic cohort WOULD experience if they were born today and experienced the age-specific mortality ($_{n}m_{x}$ or $_{n}q_{x}$) in each age group of the life table as they age through life (Week 2, Lecture 4).
+
+There is only deaths data up to age group 85+, so I am making the 85+ age group the final age group. There is data for deaths 85+ but not for 85, which means there is missing data for group 80-85, but data for 85+ exists.
+
+```{r load CR female 2007 data, eval=TRUE, echo=TRUE}
+deaths_czech_raw = read.csv("~/Documents/CSDE 533 Homeworks/CZE_d_short_idr.csv", skip= 1, header = FALSE, col.names = c("country",	"year",	"sex",	"list",	"agf",	"cause",	"total",	"d0",	"d1",	"d5",	"d10",	"d15",	"d20",	"d25",	"d30",	"d35",	"d40",	"d45",	"d50",	"d55", "d60",	"d65",	"d70",	"d75",	"d80",	"d85p",	"d85",	"d90p",	"d90",	"d95p",	"d95",	"d100p"), sep = ",")
+
+exposures_czech_raw = read.csv("~/Documents/CSDE 533 Homeworks/CZE_e.csv", skip= 1, header = FALSE, col.names = c("country",	"year",	"sex",	"agf",	"total",	"e0",	"e1",	"e5",	"e10",	"e15",	"e20",	"e25",	"e30",	"e35",	"e40",	"e45",	"e50",	"e55", "e60",	"e65",	"e70",	"e75",	"e80",	"e85p",	"e85",	"e90p",	"e90",	"e95p",	"e95",	"e100p"), sep = ",")
+
+deaths_czech_raw = deaths_czech_raw %>% 
+  select("country",	"year",	"sex",	"list",	"cause",	"total",	"d0",	"d1",	"d5",	"d10",	"d15",	"d20",	"d25",	"d30",	"d35",	"d40",	"d45",	"d50",	"d55", "d60",	"d65",	"d70",	"d75",	"d80", "d85p") %>% 
+  filter(year == 2007 & sex == 2)
+
+exposures_czech_raw = exposures_czech_raw %>% 
+  select("country",	"year",	"sex",	"total",	"e0",	"e1",	"e5",	"e10",	"e15",	"e20",	"e25",	"e30",	"e35",	"e40",	"e45",	"e50",	"e55", "e60",	"e65",	"e70",	"e75",	"e80", "e85p") %>% 
+  filter(year == 2007 & sex == 2)
+
+deaths_czech_raw
+exposures_czech_raw
+
+```
+
+```{r create empty CR life table, eval=TRUE, echo=TRUE}
+
+#Create Life Table
+life_table <- data.frame(
+  x = c("0", "1-4", "5-9", "10-14", "15-19", 
+                "20-24", "25-29", "30-34", "35-39", 
+                "40-44", "45-49", "50-54", "55-59", 
+                "60-64", "65-69", "70-74", "75-79", 
+                "80-84", "85+"),
+  n = c(1, 4, 5, 5, 5, 
+        5, 5, 5, 5, 5, 
+        5, 5, 5, 5, 5, 
+        5, 5, 5, 0),
+  nNx = rep(NA, 19),
+  nDx = rep(NA, 19),
+  nMx = rep(NA, 19)
+)
+
+# Pivot Population Data (exposures)
+exposures_czech <- exposures_czech_raw %>%
+  pivot_longer(cols = starts_with("e"), 
+               names_to = "age_group", 
+               values_to = "population_size") %>% 
+  select(-country, -year, -sex, -total)
+
+# Pivot Deaths data (deaths)
+deaths_czech_wide = deaths_czech_raw[1,]
+deaths_czech <- deaths_czech_wide %>%
+  pivot_longer(cols = starts_with("d"), 
+               names_to = "age_group", 
+               values_to = "deaths") %>% 
+  select(-country, -year, -sex, -list, -cause, -total)
+
+# S000 IS ALL CAUSES
+# cr_2007_lt
+# exposures_czech
+# deaths_czech
+
+# exposures_czech$population_size
+# life_table
+```
+
+
+```{r filling in CR life table, eval=TRUE, echo=TRUE}
+
+life_table$nNx <- exposures_czech$population_size
+life_table$nDx <- deaths_czech$deaths
+life_table$nMx <- life_table$nDx / life_table$nNx
+life_table
+kable(life_table,
+      col.names = c("x - Age Group (in years)", "n - size of Age Group", "nNx - Observed Population (Exposure)", "nDx - Observed Deaths", "nMx - Mortality Rate"),
+      digits = 5,
+      caption = "Period Life Table - Czech Republic in 2007") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+(b) **5 points** What assumption must we make about $_{n}M_{x}$ to proceed with our calculation of a period life table?
+
+We assume that there is no migration, that this is a closed population. Because it is a period life table, we also need to assume that the mortality rates for each age group are constant within that age group and that the mortality rates for 2007 are constant over that year.
+
+We must also assume that $_{n}M_{x} \approx _{n}m_{x}$, because the data we have is observed age-specific mortality rates. This will allow us to calculate the $_{n}q_{x}$ by using the $_{n}M_{x}$ to $_{n}q_{x}$ conversion:
+
+$$ _{n}q_{x} = \frac{n \cdot _{n}m_{x}}{1 + (n - _{n}a_{x}) \cdot _{n}m_{x}} $$
+(c) **5 points** Using your table in Problem 2(b), the figures in the Tools for Demographic Estimation book, and your calculated $_{n}M_{x}$ values, select a family of model life tables to use for your youngest $_{n}a_{x}$ values. State your choice and why you chose it. From there, choose the model life table within the family you chose whose $_{1}m_{0}$ value is closest to the observed all-cause $_{n}M_{x}$ value in your country and period of choice to use for $_{1}a_{0}$ and $_{4}a_{0}$.
+
+I will choose the first option because it relies on observed $_{n}M_{x}$ rather than $_{n}m_{x}$.
+
+Infant Mortality:
+$$ _{1}q_{0} = \frac{1 \cdot _{1}m_{0}}{1 + (1 - _{1}a_{0}) \cdot _{1}m_{0}} $$
+
+$_{1}a_{0}$ can either be: 
+
+1. $_{1}a_{0} = 0.07 + 1.7 \times _{1}M_{0}$ from EDM Ch. 7 on Period Life Tables, Keyfitz and Flieger (1968, p. 138)
+2. For Female individuals, if $_{1}m_{0} < .107$,
+
+$$_{1}a_{0} = 0.053 + 2.8 \times _{1}M_{0}$$ 
+$$_{4}a_{1} = 1.522 - 1.518 \times _{1}M_{0}$$
+from Preston Ch. 3 on Life Tables and Single Decrement Processes, Coale and Demeny (1983). 
+
+I will choose the first option because it relies on observed $_{n}M_{x}$ rather than $_{n}m_{x}$.
+
+```{r preprocess infant mortality, eval=TRUE, echo=TRUE}
+# 1q0 (Infant Mortality)
+
+# Mortality rate for age group [0,1)
+M0 = life_table$nMx[1]
+# Calculate 1a0
+a0 = 0.07 + 1.7 * M0
+# Mortality rate for age group [1,5)
+M1to5 = life_table$nMx[2]
+# M1to5
+```
+
+```{r calculate infant mortality, eval=TRUE, echo=TRUE}
+# Calculate 1q0
+
+q0_1 = (life_table$n[1] * M0) / (1 + (1 - a0) * M0)
+```
+
+```{r calculate child mortality, eval=TRUE, echo=TRUE}
+# 4q1 (Child Mortality)
+a1 = 1.5
+q1_4 = (life_table$n[2] * M1to5) / (1 + (4 - a1) * M1to5)
+# q1_4
+```
+
+```{r calculate under 5 mortality, eval=TRUE, echo=TRUE}
+# 5q0 (Under-5 Mortality)
+q0_5 = q0_1 + q1_4
+```
+
+$$ _{n}q_{x} = \frac{n \cdot _{n}m_{x}}{1 + (n - _{n}a_{x}) \cdot _{n}m_{x}} $$
+$$ _{45}q_{15} = \frac{45 \cdot _{45}m_{15}}{1 + (45 - \frac{45}{2}) \cdot _{45}m_{15}} $$
+```{r calculate adult mortality, eval=TRUE, echo=TRUE}
+# 45q15 (Adult Mortality)
+
+#average of all the mortality rates from age groups 15 to 60.
+m15to60 = (0.00023+0.00021+0.00026+0.00033+0.00067+0.00128+0.00189+0.00328+0.00525)/9
+# m15to60
+
+# Adult mortality
+q15_45 = (45 * m15to60) / (1 + (45 - 22.5) * m15to60)
+q15_45
+```
+
+```{r put all parameters together, eval=TRUE, echo=TRUE}
+cat("1q0 (Infant Mortality):", q0_1, "\n")
+cat("5q0 (Under-5 Mortality):", q0_5, "\n")
+cat("4q1 (Child Mortality):", q1_4, "\n")
+cat("45q15 (Adult Mortality):", q15_45, "\n")
+```
+
+The early-life values are all extremely low, especially when compared to the values of the four parameters Tools for Demographic Estimation book figures. 
+
+I searched online and found a [news article](https://english.radio.cz/czech-infant-mortality-rate-record-low-2007-8439214) from September 2008 stating that 2007 was a year of record-low infant mortality in the Czech Republic, I had no idea.
+
+The adult mortality value is relatively higher, which makes UN Far Eastern a good choice. It has high parameter values for adult mortality, but is low across the board for all other parameters.
+
+The comparison table for the life table families is: 
+
+```{r reintroducing comparison table, eval=TRUE, echo=TRUE}
+kable(lt_families_comparison, 
+      col.names = c("Life Table Families", "Adult Mortality 45_q_15", "Under-5 Mortality 5_q_0", "Child Mortality 4_q_1", "Infant Mortality 1_q_0"),
+      caption = "Life Table Families Comparison") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+From Week 3 Lecture 5's R Code created by Professor Jess Godwin,
+
+```{r load mlt, eval=TRUE, echo=TRUE}
+
+## Load Model life tables
+mlts <- readxl::read_excel(path = "unpd_2011_mlt_130_1y_abridged.xlsx")
+# mlts
+# str(mlts)
+# summary(mlts)
+```
+
+```{r look up czechia, eval=TRUE, echo=TRUE}
+## Look up Czech Republic Female e0 in WPP 2007 to choose MLT
+data("e0F1")
+e0F1 %>% filter(name == "Czechia") %>% 
+  select(name, `2007`)
+# 80.0758
+```
+
+```{r get e0 czechia vals, eval=TRUE, echo=TRUE}
+## See how high the E0 values go for each life table family
+mlts %>% 
+  group_by(Type_MLT, Family) %>% 
+  summarize(max_e0 = max(E0))
+
+## Look at nax for matching e0F
+
+mlts %>% 
+  filter(Type_MLT == "UN" & Family == "Far_East_Asian") %>% 
+  filter(age %in% c(0, 1, seq(100, 120, 5)) &
+           ## closest to WPP 2007 Czech Republic e0F
+           E0 == 80 &
+           Sex == "Female")
+
+```
+
+```{r naxs for czechia, eval=TRUE, echo=TRUE}
+## Look at nax for matching 1m0
+
+## Find value closest to our life_table$nMx[1]
+sort(mlts$mxn[mlts$Type == "UN Far_East_Asian" & mlts$age == 0 & 
+                mlts$Sex == "Female"]) 
+
+## Filter mlts to the row with the value found above
+## to get the appropriate E0 value for the MLT family
+mlts %>% 
+  filter(Type_MLT == "UN" & Family == "Far_East_Asian") %>% 
+  filter(age == 0 & Sex == "Female" & 
+           # closest to 0.00264 nMx from row 1 of the CR life table
+           round(mxn, 4) == 0.0028) 
+
+```
+
+```{r output naxs for czechia, eval=TRUE, echo=TRUE}
+## Get early life nax's based on Czechia's 2007 e0F
+nax_e0 <- mlts %>% 
+  filter(Type_MLT == "UN" & Family == "Far_East_Asian") %>% 
+  filter(age %in% c(0, 1) & E0 == 80 & Sex == "Female") %>% 
+  select(age, axn)
+
+## Get early life nax's based on Czechia's 2007 1M0
+nax_1m0 <- mlts %>% 
+  filter(Type_MLT == "UN" & Family == "Far_East_Asian") %>% 
+  filter(age %in% c(0, 1) & Sex == "Female" & E0 == 94) %>% 
+  select(age, axn)
+
+nax_e0
+nax_1m0
+```
+
+(d) **15 points** Use the results of parts (b) and graduation of the life table to fill out the $_{n}a_{x}$ column of your all-cause life table. Select a radix and fill in the columns $l_{x}$, $_{n}q_{x}$, $_{n}L_{x}$, $T_{x}$, and $e_{x}$. Present your results in a table.
+
+From Week 3 Lecture 5's R Code created by Professor Jess Goodwin,
+
+## Graduate the life table for ${_na_x}$ at other ages
+
+From Preston (2002), Keyfitz (1966) derives a quadratic polynomial function for death counts across $[x - n, x + 2n]$: 
+
+$${_na_x} = \dfrac{-\frac{n}{24} {_nd_{x-n}} + \frac{n}{2} {_nd_x} + \frac{n}{24} {_nd_{x+n}}}{ {_nd_x}}.$$
+
+This formula yields ${_na_x} = \frac{n}{2}$ when deaths are symmetrical across $[x-n, x), [x, x+n), [x + n, x + 2n).$
+
+```{r grad, eval=TRUE, echo=TRUE}
+## Create a function to graduate the life table
+grad_fn <- function(d_xminusn, d_x, d_xplusn, n){
+  num <- -(n/24)*d_xminusn + (n/2)*d_x + (n/24)*d_xplusn
+  denom <- d_x
+  num/denom
+}
+
+## Add values taken for oldest ages + graduate rest of them
+life_table <- life_table %>% 
+  left_join(nax_e0 %>% 
+              mutate(age = c("0", "1-4")) %>% 
+              select(age, axn) %>% 
+              rename("nax" = "axn"),
+            by = c("x" = "age")) %>% 
+  mutate(nax = case_when(is.na(nax) ~ grad_fn(lag(nDx), nDx, lead(nDx), 5),
+                         x == "105+" ~ 1/nMx, ## Always 1/nmx for oldest age group
+                         TRUE ~ nax))
+
+life_table
+```
+
+## ${_nM_x}$ to ${_nq_x}$ conversion + ${_np_x}$
+
+Recall the $m \rightarrow q$ conversion, 
+
+$$ {_nq_x} = \dfrac{n \times {_nm_x}}{1 + (n - {_na_x}) \times {_nm_x}}.$$
+```{r m_to_q, eval=TRUE, echo=TRUE}
+life_table <- life_table %>% 
+  mutate(
+         nqx = ifelse(x == "85+", 1, (n*nMx)/(1 + (n - nax)*nMx)),
+         npx = 1 - nqx)
+life_table
+```
+## $l_0$ and $l_x$
+
+Let $l_0 = 100,000$ and for all other ages $$l_{x+n} = l_x \times {_np_x}.$$
+
+```{r lx, eval=TRUE, echo=TRUE}
+life_table$lx <- NA
+life_table$lx[1] <- 100000
+
+for(age_grp in 2:nrow(life_table)){
+  life_table$lx[age_grp] <- life_table$lx[age_grp - 1] * life_table$npx[age_grp - 1]
+}
+
+life_table
+```
+
+## ${_nd_x}$
+
+For the oldest age group, ${_{\infty}d_{105}} = l_{105}.$ For all other ages, $${_nd_x} = l_x - l_{x+n}.$$ 
+```{r ndx, eval=TRUE, echo=TRUE}
+life_table <- life_table %>% 
+  mutate(ndx = ifelse(x == "85+", lx, lx - lead(lx)))
+
+```
+
+
+## ${_nL_x}$
+
+For the oldest age group ${_{\infty}L_{105}} = \dfrac{l_{105}}{{_\infty}M_{105}}.$ For all other ages, $${_nL_x} = n \times {l_x} + {_na_x} \times {_nd_x}.$$
+```{r nLx, eval=TRUE, echo=TRUE}
+life_table <- life_table %>% 
+  mutate(nLx = ifelse(x == "85+", lx/nMx, lead(lx)*n + ndx*nax))
+```
+
+## $T_x$ and $e_x$
+For all ages, $$T_x = \sum_{k = x}^{105} {_nL_k}$$ and $$e_x = \dfrac{T_x}{l_x}.$$
+
+
+```{r Tx_ex, eval=TRUE, echo=TRUE}
+life_table$Tx <- NA
+
+## Using a for loop
+for(age_grp in 1:(nrow(life_table))){
+  life_table$Tx[age_grp] <- sum(life_table$nLx[(age_grp):nrow(life_table)], na.rm = TRUE)
+}
+
+## Alternative one line solution
+
+# life_table$Tx_alt <- rev(cumsum(rev(life_table$nLx)))
+# 
+life_table$ex = life_table$Tx/life_table$lx
+life_table
+```
+```{r e0, eval=TRUE, echo=TRUE}
+life_table$ex[1]
+```
+
+(e) **5 points** How does the value of $e_{0}$ you estimated in your life table compare to the $e_{0}$ of the model life table you selected in part (b)? Do you think the model life table was an appropriate choice in retrospect, why or why not?
+
+This was extremely close, my value estimated in the life table was 80.23426 and the value from the model life table was 80.0758, less than one year of difference. I think this model life table was an appropriate choice because it very closely matches the observed data the estimates are derived from. 
+
+I think this would be a poor-choice model if the age-specific mortality rates are not very lined up with the rates in the observed data. 2007 was a record-low mortality rate year for the Czech Republic, so I would not expect this outlier year to be identically reflected in the model life table. 
+
+Overall, I was lucky that one of the nine tables had extremely low (relative to the other tables) early-life mortality rates and relatively higher adult mortality. This lined up well with my data.
+
+# Problem 4: Estimating a multiple decrement life table – 25 points
+
+Using your data from the Human Cause-of-Death Database, combine causes of death into the following categories:
+
+\- **Certain infectious diseases:** Certain infectious diseases have number **S001** and ICD-10 category code A00-B99.
+
+\- **Heart diseases:** Heart diseases have number **S007** and ICD-10 category code I00-I51.
+
+\- **Respiratory diseases:** Acute respiratory diseases have number **S010** and ICD-10 category codes J00-J22, U04, U07-
+U10. Other respiratory diseases have number **S011** and ICD-10 category codes J30-J98.
+
+\- **External causes:** External causes have number **S016** and ICD-10 category code A00-B99.
+
+\- **Maternal mortality:** Diseases of the genitourinary system and complications of pregnancy, childbirth and puerperium have number **S014** 
+
+\- **All other causes:** everything else, combined.
+
+```{r multi dec preprocessing, eval=TRUE, echo=TRUE}
+deaths_czech_prep = deaths_czech_raw[-1, ]
+deaths_czech_prep = deaths_czech_prep %>% 
+  select(-country, -year, -sex, -list)
+
+deaths_czech_prepped = deaths_czech_prep %>%
+  mutate(cause = case_when(
+    cause == "S001" ~ "certain_infectious_diseases",
+    cause == "S007" ~ "heart_diseases",
+    cause %in% c("S010", "S011") ~ "respiratory_diseases",
+    cause == "S016" ~ "external_causes",
+    cause == "S014" ~ "maternal_mortality",
+    TRUE ~ "all_other_causes"
+  )) %>%
+  group_by(cause) %>%  
+  summarise(across(where(is.numeric), sum, na.rm = TRUE), .groups = "drop")
+
+```
+
+
+```{r pivoting multi-dec data, eval=TRUE, echo=TRUE}
+age_groups = c("d0" = "0", "d1" = "1-4", "d5" = "5-9", "d10" = "10-14", "d15" = "15-19", "d20" = "20-24", "d25" = "25-29", "d30" = "30-34", "d35" = "35-39", "d40" = "40-44", "d45" = "45-49", "d50" = "50-54",  "d55" = "55-59", "d60" = "60-64", "d65" = "65-69", "d70" = "70-74", "d75" = "75-79", "d80" = "80-84", "d85p" = "85+")
+
+# Pivot the data
+deaths_czech_long = deaths_czech_prepped %>%
+  pivot_longer(cols = starts_with("d"), 
+               names_to = "x", 
+               values_to = "nDx") %>%
+  mutate(x = age_groups[x]) %>%
+  select(cause, x, nDx)
+
+# make each deaths-cause its own column
+deaths_czech_wide = deaths_czech_long %>%
+  pivot_wider(names_from = cause, values_from = nDx, names_glue = "nDx_{cause}")
+
+colnames(deaths_czech_wide)
+```
+```{r create multi-dec deaths table, eval=TRUE, echo=TRUE}
+deaths_czech_wide$pop = NA
+deaths_czech_wide$pop = exposures_czech$population_size
+
+kable(deaths_czech_wide, 
+      col.names = c("x - Age Group", "nDx All Other Causes", "nDx Certain Infectious Diseases", "nDx External Causes", "nDx Heart Diseases", "nDx Maternal Mortality", "nDx Respiratory Diseases", "nNx - Population"),
+      digits = 2,
+      caption = "Czech Republic Multi-Decrement Deaths Table") %>%
+  kable_styling(
+    font_size = 15
+  ) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+(a) **15 points** For the same country and period in Problem 3, calculate the multiple decrement life table for females for the groups of causes above with columns $_{n}m^{i}_{x}$, $_{n}d^{i}_{x}$, $_{n}q^{i}_{x}$, and $l^{i}_{x}$ where $i$ indexes cause of death. Present your answers in a table.
+
+$$_{n}d_{x} = \sum_{i}{_{n}d^{i}_{x}}$$
+
+$$_{n}q^{i}_{x} = \frac{_{n}d^{i}_{x}}{l_{x}}$$
+
+$$_{n}m^{i}_{x} = \frac{_{n}d^{i}_{x}}{_{n}L_{x}}$$
+
+$$l^{i}_{x} = \sum_{a=x}^{\infty}{_{n}d^{i}_{a}}$$
+```{r combine table for multi-dec calculations, eval=TRUE, echo=TRUE}
+multidec_czech = deaths_czech_wide %>%
+  left_join(life_table, by = "x")
+
+kable(multidec_czech,
+      col.names = c("Age Group", 
+                    "Deaths - Other Causes", 
+                    "Deaths - Infectious Diseases", 
+                    "Deaths - External Causes", 
+                    "Deaths - Heart Diseases", 
+                    "Deaths - Maternal Mortality", 
+                    "Deaths - Respiratory Diseases", 
+                    "Total Population", 
+                    "Age Interval (n)", 
+                    "Person-Years (nNx)", 
+                    "Total Deaths (nDx)", 
+                    "Mortality Rate (nMx)", 
+                    "Average Person-Years Lived (nax)", 
+                    "Probability of Death (nqx)", 
+                    "Probability of Survival (npx)", 
+                    "Survivors at Age x (lx)", 
+                    "Deaths at Age x (ndx)", 
+                    "Person-Years Lived (nLx)", 
+                    "Total Years Remaining (Tx)", 
+                    "Life Expectancy (ex)"), 
+      digits = 5,
+      caption = "Multi Decrement Life Table Setup for nqxi, nmxi, lxi Calculations - Female Czech Republic 1993 Data") %>%
+  kable_styling(font_size = 15) %>%
+  scroll_box(width = "900px", height = "500px")
+
+```
+
+```{r generate nqxi nmxi and lixi, eval=TRUE, echo=TRUE}
+# Cause-specific probability of death (_{n}q^{i}_{x})
+multidec_czech = multidec_czech %>%
+  mutate(
+    nqxi_all_other_causes = nDx_all_other_causes / lx,
+    nqxi_certain_infectious_diseases = nDx_certain_infectious_diseases / lx,
+    nqxi_external_causes = nDx_external_causes / lx,
+    nqxi_heart_diseases = nDx_heart_diseases / lx,
+    nqxi_maternal_mortality = nDx_maternal_mortality / lx,
+    nqxi_respiratory_diseases = nDx_respiratory_diseases / lx
+  )
+
+# Cause-specific mortality rate (_{n}m^{i}_{x})
+multidec_czech = multidec_czech %>%
+  mutate(
+    nmxi_all_other_causes = nDx_all_other_causes / nLx,
+    nmxi_certain_infectious_diseases = nDx_certain_infectious_diseases / nLx,
+    nmxi_external_causes = nDx_external_causes / nLx,
+    nmxi_heart_diseases = nDx_heart_diseases / nLx,
+    nmxi_maternal_mortality = nDx_maternal_mortality / nLx,
+    nmxi_respiratory_diseases = nDx_respiratory_diseases / nLx
+  )
+
+# Cumulative deaths (_{l}^{i}_{x})
+multidec_czech = multidec_czech %>%
+  mutate(
+    lixi_all_other_causes = rev(cumsum(rev(nDx_all_other_causes))),
+    lixi_certain_infectious_diseases = rev(cumsum(rev(nDx_certain_infectious_diseases))),
+    lixi_external_causes = rev(cumsum(rev(nDx_external_causes))),
+    lixi_heart_diseases = rev(cumsum(rev(nDx_heart_diseases))),
+    lixi_maternal_mortality = rev(cumsum(rev(nDx_maternal_mortality))),
+    lixi_respiratory_diseases = rev(cumsum(rev(nDx_respiratory_diseases)))
+  )
+# colnames(multidec_czech)
+
+kable(multidec_czech,
+      col.names = c("Age Group", 
+                    "ndxi (All Other Causes)", 
+                    "ndxi (Infectious Diseases)", 
+                    "ndxi (External Causes)", 
+                    "ndxi (Heart Diseases)", 
+                    "ndxi (Maternal Mortality)", 
+                    "ndxi (Respiratory Diseases)", 
+                    "Population", 
+                    "Interval Width (n)", 
+                    "Exposures (nNx)", 
+                    "Total Deaths (nDx)", 
+                    "Mortality Rate (nMx)", 
+                    "Average Years Lived in Interval (nax)", 
+                    "Probability of Death (nqx)", 
+                    "Probability of Survival (npx)", 
+                    "Number Alive at Age x (lx)", 
+                    "Deaths in Interval (ndx)", 
+                    "Person-Years Lived in Interval (nLx)", 
+                    "Total Person-Years Remaining (Tx)", 
+                    "Life Expectancy (ex)", 
+                    "nqxi (All Other Causes)", 
+                    "nqxi (Infectious Diseases)", 
+                    "nqxi (External Causes)", 
+                    "nqxi (Heart Diseases)", 
+                    "nqxi (Maternal Mortality)", 
+                    "nqxi (Respiratory Diseases)", 
+                    "nmxi (All Other Causes)", 
+                    "nmxi (Infectious Diseases)", 
+                    "nmxi (External Causes)", 
+                    "nmxi (Heart Diseases)", 
+                    "nmxi (Maternal Mortality)", 
+                    "nmxi (Respiratory Diseases)", 
+                    "lxi (All Other Causes)", 
+                    "lxi (Infectious Diseases)", 
+                    "lxi (External Causes)", 
+                    "lxi (Heart Diseases)", 
+                    "lxi (Maternal Mortality)", 
+                    "lxi (Respiratory Diseases)"),
+      digits = 5,
+      caption = "2007 Multi-Decrement Female Life Table") %>%
+  kable_styling(font_size = 15) %>%
+  scroll_box(width = "900px", height = "500px")
+```
+
+(b) **10 points** Calculate the female probability of death before one’s 35th birthday given survival to age 20 in your country and period in the hypothetical absence of maternal mortality. Assume cause-specific hazards are proportional. Interpret this calculation in comparison to the all-cause probability of death before one’s 35th birthday given survival to age 20.
+
+First we must calculate the probability of survival from 20 to 35, excluding maternal mortality:
+
+```{r excluding maternal mortality, eval=TRUE, echo=TRUE}
+# multidec_czech
+multidec_czech$nqx_excl_maternal = multidec_czech$nqx - multidec_czech$nqxi_maternal_mortality
+
+```
+
+```{r compare without vs with maternal mortality, eval=TRUE, echo=TRUE}
+# Survival WITHOUT maternal mortality
+p_survival_20_35_excl_maternal <- prod(1 - multidec_czech$nqx_excl_maternal[multidec_czech$x >= 20 & multidec_czech$x < 35])
+
+# probability of survival from 20 to 35 (all causes)
+p_survival_20_35_all <- prod(1 - multidec_czech$nqx[multidec_czech$x >= 20 & multidec_czech$x < 35])
+
+# Use the rule of complements to get q for each
+q_20_35_excl_maternal <- 1 - p_survival_20_35_excl_maternal
+q_20_35_all <- 1 - p_survival_20_35_all
+
+paste("Excluding maternal mortality, the probability of death by age 35 given survival to age 20 is:", round(q_20_35_excl_maternal, 5))
+
+paste("Including all causes, the probability of death by age 35 given survival to age 20 is:", round(q_20_35_all, 5))
+
+```
+
+In comparing the values for the probability of death by age 35, given survival to age 20, with or without the burden of maternal mortality, we can see the probability of death increases when adding in maternal mortality. Additionally, the difference is so small between the two values that the burden of mortality from maternal mortality does not have a large influence on the mortality from all causes. This may mean that 2007 was a time in the Czech Republic where maternal mortality was not very high.
+

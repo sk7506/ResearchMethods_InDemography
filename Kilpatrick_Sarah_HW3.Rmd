@@ -1,0 +1,893 @@
+---
+title: "SOC/CSSS/CSDE 533 Homework 3"
+author: "Sarah Kilpatrick"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# knitr::opts_knit$set(root.dir = paste0("~/Dropbox/Training/CSDE533/Wi25/",
+#                                        "Assignments/HW 3/"))
+
+## Libraries
+library(kableExtra)
+library(ggplot2)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(kableExtra)
+library(readxl)
+library(survey)
+library(labelled)
+library(knitr)
+```
+
+# Problem 1: Estimating the a cohort parity measures - 30 points
+
+We will use the [Demographic & Health Surveys](https://dhsprogram.com) model births record dataset, \texttt{ZZBR62FL.DTA} for this problem. [Download full model datasets here.](https://dhsprogram.com/data/Download-Model-Datasets.cfm?flag=1) [See the Recode manual here.](https://dhsprogram.com/publications/publication-dhsg4-dhs-questionnaires-and-manuals.cfm)
+
+**Variables:**
+
+  * **caseid** - unique identifier of the child's mother
+  * **bidx** - unique identifier of children for a given **caseid**
+  * **v006** - interview month
+  * **v007** - interview year
+  * **b1** - birth month
+  * **b2** - birth year
+  * **b5** - indicator child was alive at time of interview
+  * **b7** - child age in months at death
+  * **v025** - whether the surveyed household was stratified as urban or rural
+  * **v009** - month of birth of woman
+  * **v010** - year of birth of woman
+  
+```{r load_data, eval = TRUE}
+
+births <- read_dta("~/Documents/CSDE 533 Homeworks/ZZBR62FL.DTA") %>% 
+  select(caseid, bidx, v006, v007, v009, v010,
+         b1, b2, b5, b7, v025) 
+# births
+```
+
+**(a)** **5 points ** For the 1975 birth cohort of women, create a table of completed parity values $w_j$. Interpret $w_4$ and $w_1$ in a sentence.
+
+In order to do the fertility calculations, I am assuming this is a closed population with only live births recorded. That is, if a mother's unique **caseid** shows up 8 times, they have a parity of 8 (8 live births). I am also assuming that there is no one in this table with a parity of 0, since it is a dataset recording mothers and their children, not all women interviewees in general.
+
+I am assuming parity is counted as in the [CDC technical index for cohort fertility measures](https://www.cdc.gov/nchs/data/nvss/cohort_fertility_tables_1960_2005_appendix.pdf):
+
+"Parity indicates how many live births a mother has had. Before delivery, a mother having her first baby has a parity of zero, and a mother having her third baby has a parity of two. After delivery, the mother of a baby who is a first live birth has a parity of one, and the mother of a baby who is a third live birth has a parity of three." (page 5)
+
+$W_{4}$ is the number of women with 4 live-birth children, or women pregnant with their 5th, but not having delivered yet. $W_{1}$ is the number of women who have had their first child (cumulatively, so once they have their second, they leave $W_{1}$ and join $W_{2}$).
+
+```{r 1_a, eval=TRUE, echo=TRUE}
+
+births_1975 = births %>% 
+  filter(v010 == 1975)
+
+births_1975_freq = data.frame(table(births_1975$caseid)) 
+
+births_1975_freq = births_1975_freq %>%
+  group_by(Var1) %>% 
+  summarise(Freq = max(Freq)) %>% 
+  count(Freq) %>% 
+  rename(j = Freq, w_j = n) %>% 
+  # no one in the data has 12 kids
+  add_row(j=12, w_j=0, .before=12)
+
+births_1975_freq
+
+kable(births_1975_freq,
+      col.names = c("Number of Children", "Number of Mothers @ Parity j (w_j)"),
+      caption = "Completed Parity Values for Women of 1975 Birth Cohort") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+
+**(b)** **5 points ** Use your answer from part (a) to calculate counts of women at parity $j$ or higher, $P_j$. Interpret $P_0$ and $P_2$ in a sentence.
+
+$P_{0}$ is the number of women with 0 or more children. This is the entire 1975 birth cohort. $P_{2}$ is the number of women with 2 or more children. It excludes women without children and women with 1 child.
+
+This data includes women for which there is a recorded child, so this **births** data lacks information about the full birth cohort, only recording those interviewees which had children.
+
+```{r 1_b, eval=TRUE, echo=TRUE}
+births_1975_freq = births_1975_freq %>%
+  arrange(j) %>%
+  mutate(P_j = rev(cumsum(rev(w_j)))) 
+
+kable(births_1975_freq,
+      col.names = c("Number of Children", "Number of Mothers @ Parity j (w_j)", "Number of Mothers @ Parity j or Higher (P_j)"),
+      caption = "Completed Parity Values for Women of 1975 Birth Cohort") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+**(c)** **5 points ** Calculate parity progression ratios, $PPR_{j, j+1}$.Interpret $PPR_{3,4}$ and $PPR_{0,1}$ in a sentence.
+
+The Parity Progression Ratio (PPR) $PPR_{j, j+1}$ is usually a cohort measure of the number of women at parity $i+1$ divided by the number of women at parity $i$ or more:
+$$ PPR_{(i, i+1)} = \frac{P_{i+1}}{P_{i}}$$
+```{r 1_c, eval=TRUE, echo=TRUE}
+births_1975_freq = births_1975_freq %>%
+  mutate(PPR = P_j / lead(P_j)) %>%
+  mutate(PPR = ifelse(is.na(PPR), NA, PPR))
+
+kable(births_1975_freq,
+      col.names = c("Number of Children", "Number of Mothers @ Parity j (w_j)", "Number of Mothers @ Parity j or Higher (P_j)", "Parity Progression Ratio (PPR)"),
+      digits = 2,
+      caption = "Completed Parity Values for Women of 1975 Birth Cohort") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+**(d)** **5 points ** Calculate the cohort total fertility rate (TFR) using only answers to previous parts of this problem. Interpret the value of the cohort TFR in a sentence.
+
+The cohort total fertility rate (TFR) represents the average number of children born to women born in the 1975 cohort by the end of their reproductive span.
+
+It is different from period total fertility rate, which represents the average fertility for a synthetic group of women in a given year, if they experienced the same age-specific fertility rates of that particular year, throughout their reproductive spans.
+
+The cohort TFR is $$TFR = \sum_{x} n \times _{n}F_{x}$$ for $x = 15, 20, 25,... , 45$ if $n=5$.
+
+It can also be derived using Parity Progression Ratios, where the iterative conditioning for each parity can be summed to the TFR:
+
+$$TFR = \frac{P_{1}}{N} + \frac{P_{2}}{N} + \frac{P_{3}}{N} + ... $$
+$$TFR = \frac{P_{1}}{N} + [\frac{P_{1}}{N} \times \frac{P_{2}}{P_{1}}] + [\frac{P_{1}}{N} \times \frac{P_{2}}{P_{1}} \times \frac{P_{3}}{P_{2}}] + ... $$
+$$TFR = PPR_{(0,1)} + [PPR_{(0,1)} \times PPR_{(1,2)}] + [PPR_{(0,1)} \times PPR_{(1,2)} \times PPR_{(2,3)}] + ... $$
+Which gives rise to this iterative conditioning more apparent when written out in words:
+
+$$P(\text{1 or more child}) + ...$$
+$$[P(\text{1 or more child}) \times P(\text{2 or more child} | \text{1 or more child})] + ...$$
+$$[P(\text{1 or more child}) \times P(\text{2 or more child} | \text{1 or more child}) \times P(\text{3 or more child} | \text{2 or more child})] + ...$$
+
+```{r 1_d, eval=TRUE, echo=TRUE}
+
+TFR = 0
+
+for (i in 1:(nrow(births_1975_freq) - 1)) {
+  # Calculate the contribution to TFR for this step
+  contribution = (births_1975_freq$P_j[i] / sum(births_1975_freq$P_j)) * prod(births_1975_freq$PPR[1:i])
+  
+  # sum up the contribution to the total TFR 
+  TFR = TFR + contribution
+  
+}
+
+cat("Total Fertility Rate (TFR) =", round(TFR, 2))
+
+```
+
+This means that for women born in 1975, the average births to each would be 3.84, which is above replacement level. This is a population with a growing young population, as opposed to an aging population.
+
+**(e)** **5 points ** Calculate the net reproduction rate (NRR) from answers to previous parts of this problem. Interpret the value of the cohort NRR in a sentence.
+
+Net Reproduction Rate (NRR) can be calculated using the following formula:
+
+$$ NRR = \frac{ \sum\limits_{j} {w_{j} \times j} } { \sum\limits_{j} w_{j} } $$
+The cohort Net Reproduction Rate (NRR) represents the average number of female children born to women born in the 1975 cohort by the end of their reproductive span. It does not consider mortality in the denominator. 
+I am assuming all females born make it to reproductive age.
+
+If it were a period measure, it would represent the average number of female births women born in 1975 would have if they were subject to age-specific fertility and mortality rates throughout their reproductive span.
+
+```{r 1_e, eval=TRUE, echo=TRUE}
+numerator <- sum(births_1975_freq$w_j * births_1975_freq$j)
+denominator <- sum(births_1975_freq$w_j)
+
+cat("The Net Reproduction Rate (NRR) is ", round(numerator / denominator, 2))
+
+```
+
+For some reason this value is higher than the Total Fertility Rate (TFR).
+
+
+**(f)** **5 points ** If we assume this hypothetical dataset is a **census** of the 1975 birth cohort of women carried out over the reported months and year of interview, what are the remaining issues with reporting your answers in (a)-(e) as the *true* cohort fertility measures for the 1975 birth cohort. **Hint:** Think about limitations in the data collection process. You may need to reference DHS documentation for the survey design.
+
+Firstly, there are no records for women with 0 children in the **births** data. This would sway the TFR and NRR higher than they should be.
+
+Also, the data could be over-representing rural vs. urban areas. Previous DHS data shows that rural interviewees are twice as prevalent in the data than urban interviewees. 
+
+The last possibility is that this data was recorded during the women's reproductive span. While it would have been many decades, some women could have had children after the interviews took place, which would have meant  these children were not reflected in the calculations.
+
+# Problem 2: Period Fertility Measures -- 20 points
+
+*Essential Demographic Methods* Chapter 6, Problem 1.
+
+1. Calculate the period NRR, TFR, GRR, and synthetic cohort mean age at childbearing μ from data in Table 6.7 for women in the African country of Togo in 1961 from Keyfitz and Flieger (1968). It is rare to have such data from Africa from the 1960s, epitomizing high mortality and fertility unaffected by fertility decline. The period life-table radix is 100,000, the total female population is 813,295, and 41,315 babies in 1961 were boys and 42,855 were girls.
+
+We assume from the Essential Demographic Methods textbook that the default fraction of Females at birth is 0.4886.
+
+```{r setup table ch.6 2, eval=TRUE, echo=TRUE}
+table6_7 <- data.frame(
+  x = c(15, 20, 25, 30, 35, 40, 45),
+  nBx = c(7150, 21910, 25305, 14825, 9935, 3625, 1420),
+  nDx = c(578, 502, 1034, 659, 638, 441, 638),
+  nKx = c(48564, 67096, 80746, 53670, 51975, 32022, 32307),
+  nLx = c(337775, 321570, 306003, 287031, 270049, 253276, 232925)
+)
+
+nBx_female = 42855
+nBx_male = 41315
+female_pop = 813295
+fraction_female_births = 0.4886
+
+table6_7
+
+kable(table6_7,
+      col.names = c("x - Age Group", "nBx - Number of Births", "nDx - Number of Deaths", "nKx - Mid-Period Population", "nLx - Person-Years Lived"),
+      caption = "Period Data for Women in Togo for 1961") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "300px")
+```
+
+First, we must calculate period age-specific fertility, written as $_{n}F_{x}$, which is a "quotient whose numerator is the count of babies born in the period to population members between ages $x$ and $x+n$. Its denominator is the person-years lived by people between ages $x$ and $x+n$" (Essential Demographic Methods, Ch. 6, page 128).
+
+Where the period person-years lived $PPYL$ can be derived by the mid-period population times the period length:
+
+$$ PPYL = _{n}K_{x} \times T$$
+In this case, the duration T of the period can be taken to be $T=1$. Therefore,
+
+$$ PPYL \approx _{n}K_{x}$$ in units of person-years, instead of units of people (Essential Demographic Methods, Ch. 6, page 129).
+
+This means our period Age-Specific Fertility Rate (ASFR) is $$_{n}F_{x} = \frac{_{n}B_{x}}{\text{PPYL}}$$
+
+And our period Age-Specific Mortality Rate is $$_{n}M_{x} = \frac{_{n}D_{x}}{\text{PPYL}}$$
+
+```{r nFx and nMx 2, eval=TRUE, echo=TRUE}
+table6_7$nFx <- table6_7$nBx / table6_7$nKx
+table6_7$nMx <- table6_7$nDx / table6_7$nKx
+table6_7
+```
+
+The Period Net Reproductive Rate (NRR) can be calculated as: 
+
+$$ NRR = \frac{ \sum_{x}{_{n}F_{x}^{F}  \times _{n}L_{x}^{F}} }{ l_{0} } $$
+We also know that this is a table for women, specifically. This means that any $_{n}L_{x}$ is already a female-specific $_{n}L_{x}^{F}$. 
+
+We can calculate the female-specific age-specific fertility rate $_{n}F_{x}^{F}$ as follows, using the observed data for male vs. female births out of the total nBx births per age group, instead of the 0.486 number:
+
+```{r NRR 2, eval=TRUE, echo=TRUE}
+frac_female = nBx_female / (nBx_female + nBx_male)
+# frac_female
+
+table6_7 <- table6_7 %>%
+  mutate(nFxF = (nBx * frac_female) / nLx)
+
+NRR = sum(  (table6_7$nFxF * table6_7$nLx) / female_pop)
+
+cat("The Period Net Reproductive Rate (NRR) is", round(NRR, 4))
+table6_7
+```
+
+Period Total Fertility Rate (TFR) can be calculated as:
+
+$$TFR = \sum_{x}{_{n}F_{x} \times n}$$
+```{r TFR 2, eval=TRUE, echo=TRUE}
+
+TFR = sum(table6_7$nFx * 5)
+cat("The Period Total Fertility Rate (TFR) is", round(TFR, 4))
+
+```
+
+Period Gross Reproductive Rate (GRR) can be calculated as:
+
+$$GRR = \sum_{x} n \times _{n}F_{x}^{F}$$
+```{r GRR 2, eval=TRUE, echo=TRUE}
+
+GRR = sum(table6_7$nFxF * 5)
+cat("The Gross Reproductive Rate (GRR) is", round(GRR, 4))
+
+```
+
+Lastly, the synthetic cohort mean age at childbearing μ can be calculated as:
+
+$$\mu = \frac{\sum _{n}F_{x} \times _{n}L_{x} \times (x \times \frac{n}{2})} {\sum {_{n}F_{x} \times _{n}L_{x} } } $$
+
+
+```{r synthetic cohort mu 2, eval=TRUE, echo=TRUE}
+
+# assumes n = 5
+midpoint_x = table6_7$x + (2.5)
+
+mu_numerator = sum(table6_7$nFx * table6_7$nLx * midpoint_x)
+mu_denominator = sum(table6_7$nFx * table6_7$nLx)
+
+mu = mu_numerator / mu_denominator
+
+cat("The synthetic cohort mean age at childbearing μ is", round(mu, 4))
+
+```
+
+
+# Problem 3: Period age-specific fertility rates -- 25 points
+
+Select a country and two periods from the WPP 2024 to calculate age-specific fertility rates for, make sure that country/periods is also in the [Human Fertility Database](https://www.humanfertility.org/Home/Index).
+
+```{r wpp2024, eval=TRUE, echo=TRUE}
+# library(devtools)
+# library(remotes)
+# options(timeout = 600)
+# install_github("PPgp/wpp2024")
+library(wpp2024)
+library(HMDHFDplus)
+## Get names of HFD datsets
+# getHFDitemavail("USA") %>% View()
+```
+
+I choose the United States and my two periods will be 1980 and 2005.
+
+**(a)** **5 points ** Use data on births, age-specific population, and the proportion of births by age of mother to calculate the age-specific fertility rates (ASFRs) for your country of choice in each of the two periods. Present the results in a plot.
+
+I will be using:
+- pop1dt for age-specific population data
+- WPP 2024 file called "WPP2024_FERT_F03_BIRTHS_BY_SINGLE_AGE_OF_MOTHER.xlsx" for the proportion of births by age of mother.
+
+The columns named 15-49 are the number of births by a single age (such as 15 years old, etc.) of the mothers, in thousands.
+
+```{r load data for USA 3_a, eval=TRUE, echo=TRUE}
+
+# Load population data
+data(popAge1dt)
+usa_popdata <- popAge1dt %>% 
+  filter(country_code == 840, year %in% c(1980, 2005)) %>%
+  rename(year = year, age = age, popF = popF) %>%
+  mutate(popF = as.numeric(popF))  # Ensure popF is numeric
+
+# Load births by mother's age data
+births_by_mother_age <- read_excel(
+  path = "~/Downloads/WPP2024_FERT_F03_BIRTHS_BY_SINGLE_AGE_OF_MOTHER.xlsx", 
+  skip = 16, 
+  col_names = FALSE
+)
+
+# Set correct column names
+colnames(births_by_mother_age) <- births_by_mother_age[1, ]
+births_by_mother_age <- births_by_mother_age[-1, ]
+
+# Clean the dataset
+births_by_mother_age <- births_by_mother_age %>% 
+  type.convert(as.is = TRUE) %>% 
+  select(-`ISO3 Alpha-code`, -`ISO2 Alpha-code`, -Notes)
+
+# USA only
+usa_births_all_time <- births_by_mother_age %>% 
+  filter(`Location code` == 840)
+
+# for the years 1980 and 2005
+usa_births_raw <- usa_births_all_time %>% 
+  filter(Year %in% c(1980, 2005))
+
+# pivot longer to get age-specific births
+usa_births <- usa_births_raw %>%
+  pivot_longer(
+    cols = `15`:`49`,
+    names_to = "age",
+    values_to = "births"
+  ) %>%
+  mutate(age = as.integer(age), births = as.numeric(births)) %>%
+  rename(year = Year)
+
+# Merge and calculate ASFR using person-years lived
+usa_asfr <- usa_births %>%
+  inner_join(usa_popdata, by = c("year", "age")) %>%
+  mutate(
+    abs_births = births * 1000,  # Convert from thousands to actual number of births
+    abs_populationF = popF * 1000,
+    abs_population = pop * 1000,
+    # person_years = abs_populationF * age,   # Calculate total person-years lived
+    ASFR = abs_births / abs_populationF
+  )  %>% 
+  select(-Index, -Variant, -`Region, subregion, country or area *`, -`Location code`, -`SDMX code**`, -Type, -`Parent code`, -country_code, -name, -births, -pop, -popF)
+
+```
+
+```{r plot ASFR 3_a, eval=TRUE, echo=TRUE}
+
+plot1 = ggplot(usa_asfr, aes(x = age, y = ASFR, color = as.factor(year))) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  # scale_x_continuous(
+  #     labels = abs,
+  #     breaks = seq(min(usa_asfr$ASFR), max(usa_asfr$ASFR))) +
+  # scale_y_continuous(
+  #     labels = abs,
+  #     breaks = seq(0, 10, by = 1)) +
+  scale_color_manual(values = c("1980" = "steelblue", "2005" = "slateblue")) +
+  labs(title = "Age-Specific Fertility Rate (ASFR) in the USA",
+       x = "Age of Mother",
+       y = "Age-Specific Fertility Rates",
+       color = "Year") +
+  theme_minimal() +
+  theme(
+      axis.text.x = element_text(hjust = 1),
+      plot.title = element_text(size = 10),
+      legend.title = element_blank()
+    ) +
+  theme(legend.position = "top")
+
+plot1
+
+```
+
+**(b)** **5 points ** Calculate the total fertility rate (TFR) and crude birth rate (CBR) for each period. Present your results in a table. Comment on changes in the rates between the two periods.
+
+We can assume that in this population, the person-years are approximated with the population, meaning everyone who is to be born or who is to die (since this is also assumed to be a closed population without migration) in that year does so on the first day of that year.
+
+The period TFR can be calculated as: $$TFR = \sum_{x} n \times _{n}F_{x}$$
+
+In this case, $N = 1$ because the data for population and births is on an annual basis.
+
+```{r create total fertility rates 3_b, eval=TRUE, echo=TRUE}
+
+usa_tfr <- usa_asfr %>%
+  group_by(year) %>%
+  summarise(TFR = sum(ASFR, na.rm = TRUE))
+
+kable(usa_tfr,
+      col.names = c("Year", "Total Fertility Rate (TFR)"),
+      digits = 3,
+      caption = "Total Fertility Rates in USA (1980 vs. 2005)") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "200px")
+```
+
+The crude birth rate is a period rate calculating the fraction of 
+$$\frac{\text{# of births in [0, T]}}{\text{# of person-years lived between [0,T]}}$$
+
+```{r create crude birth rates 3_b, eval=TRUE, echo=TRUE}
+# total births from usa_asfr
+usa_birthsCBR = usa_asfr %>%
+  group_by(year) %>%
+  summarise(
+    total_births = sum(abs_births, na.rm = TRUE)
+  )
+
+# total population from original usa_popdata set
+usa_popdata = usa_popdata %>%
+  mutate(abs_pop = pop * 1000,
+         abs_popF = popF * 1000)
+
+usa_popCBR = usa_popdata %>%
+  group_by(year) %>%
+  summarise(
+    total_person_years = sum(abs_pop, na.rm = TRUE)
+  )
+
+usa_cbr <- left_join(usa_birthsCBR, usa_popCBR, by = "year") %>%
+  mutate(CBR = total_births / total_person_years * 1000) %>%
+  select(-total_births, -total_person_years)
+
+kable(usa_cbr,
+      col.names = c("Year", "Crude Birth Rate (CBR)"),
+      digits = 2,
+      caption = "Crude Birth Rates in the USA") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "200px")
+```
+
+**(c)** **5 points ** Using age-standardization, standardize the CBR for the latest period to that of the earlier period. Present your results in a table and provide an interpretation for the comparison of the age-standardize birth rates (ASBRs).
+
+We must first assume the age-specific fertility rates are constant.
+
+We can create age-standardized crude birth rates by using $_{n}C_{x}^{(s)}$, a standard age-specific population age composition.
+
+Then, the Age-Standardized Birth Rate (ASBR) is: 
+
+$$ASBR_{t} = \sum_{x}{_{n}F_{x} \times _{n}C_{x}^{(s)}}$$
+The earlier period (1980) is now the standard population composition, and we will compare the 2005 fertility measures to this one.
+
+```{r age specific birth rates for each period 3_c, eval=TRUE, echo=TRUE}
+
+usa_asfr_2005 <- usa_asfr %>%
+  filter(year == 2005) %>%
+  select(age, ASFR)
+
+usa_asfr_1980 <- usa_asfr %>%
+  filter(year == 1980) %>%
+  select(age, ASFR)
+
+```
+
+```{r standardize 2005 to 1980 population 3_c, eval=TRUE, echo=TRUE}
+
+standard_pop_1980 <- usa_popdata %>%
+  filter(year == 1980) %>%
+  select(age, abs_pop, abs_popF) %>%
+  # creates a new column with the percent that age group population is out of the total population
+  mutate(nCxs = abs_popF / sum(abs_pop))
+
+```
+
+```{r calculate standardized birth rate 3_c, eval=TRUE, echo=TRUE}
+
+usa_asbr_2005 = usa_asfr %>%
+  filter(year == 2005) %>%
+  left_join(standard_pop_1980, by = "age") %>% 
+  mutate(asbr_contribution = usa_asfr_2005 * nCxs) %>%
+  summarise(ASBR_2005 = sum(asbr_contribution, na.rm = TRUE))
+
+newval = as.numeric(usa_asbr_2005[1])
+
+usa_cbr <- usa_cbr %>%
+  mutate(standardized_cbr = newval)
+
+usa_cbr_single_row <- data.frame(
+  cbr1980 = usa_cbr$CBR[usa_cbr$year == 1980],
+  cbr2005 = usa_cbr$CBR[usa_cbr$year == 2005],
+  brstd2005 = usa_cbr$standardized_cbr[usa_cbr$year == 2005])
+
+kable(usa_cbr_single_row,
+      col.names = c("1980 crude birth rate", "2005 crude birth rate", "2005 Birth Rate Standardized to 1980 Population Composition"),
+      digits = 1,
+      caption = "Crude Birth Rates in the USA") %>%
+  kable_styling(font_size = 15,
+                bootstrap_options = c("striped", "condensed")) %>%
+  scroll_box(width = "600px", height = "200px")
+
+```
+
+The 2005 birth rate standardized to the 1980 population demonstrates what the 2005 birth rate would be if the population composition in 2005 had been unchanged since 1980. This shows us that while there was a decline in CBR from 16.2 in 1980 to 13.6 in 2005, the decline was more influenced by declining births and possibly an aging population, since the standardized birth rate of 7.8 is lower than 13.6.  
+
+**(d)** **5 points ** Using the decomposition of the difference in rates technique, decompose the difference between the CBR in 2005  and the CBR in 1980 into the contribution due to changes in ASFRs between the periods and changes in the age-specific composition of the population.
+
+We can compute the difference in rates by using:
+
+$$ \Delta = \text{CBR}_{2005} - \text{CBR}_{1980} $$
+
+Which is, in words,
+
+$$ = [\text{difference in age composition}] \times [\text{average fertility}] + [\text{difference in age-specific fertility}] \times [\text{average age composition}] $$
+
+Which can be populated by the following terms:
+
+$$ =  \sum_{x} { (_{n}C_{x}^{[0,T],\text{pop 1}} - _{n}C_{x}^{[0,T],\text{pop 2}})(\frac{_{n}F_{x}^{[0,T],\text{pop 1}} + _{n}F_{x}^{[0,T],\text{pop 2}}}{2}) } + \sum_{x} { (_{n}F_{x}^{[0,T],\text{pop 1}} - _{n}F_{x}^{[0,T],\text{pop 2}}) (\frac{ _{n}C_{x}^{[0,T],\text{pop 1}} + _{n}C_{x}^{[0,T],\text{pop 2}}}{2}) } $$
+And as a sanity check:
+
+$$ = [\text{contribution of differences in age composition}] + [\text{contribution of differences in age-specific fertility}] $$
+This solution uses code provided by Jessica Godwin, course CSDE 533 Winter 2025. 
+
+```{r decompose rates 3_d, eval=TRUE, echo=TRUE}
+# Try with popF scaled for absolute population for females instead of abs_pop
+
+# New datafames for 1980 and 2005 with Age, Absolute Population (instead of per 1,000) and Population Composition between 0 and 1
+standard_pop_1980F <- usa_popdata %>%
+  filter(year == 1980) %>%
+  select(age, abs_pop, abs_popF) %>%
+  # creates a new column with the percent that age group population is out of the total population
+  mutate(nCxsF = (abs_popF) / sum(abs_pop))
+
+standard_pop_2005F <- usa_popdata %>%
+  filter(year == 2005) %>%
+  select(age, abs_pop, abs_popF) %>%
+  # creates a new column with the percent that age group population is out of the total population
+  mutate(nCxsF = (abs_popF) / sum(abs_pop))
+
+# standard_pop_1980F
+# standard_pop_2005F
+
+standard_pop_1980_0_100F = standard_pop_1980F %>% 
+  rename(nCxs_1980_0_100F = nCxsF) %>% 
+  left_join(usa_asfr %>% filter(year == 1980) %>% select(age, ASFR), by = "age") %>%
+  rename(ASFR_1980F = ASFR) %>% 
+  mutate(ASFR_1980F = replace_na(ASFR_1980F, 0))
+  
+standard_pop_2005_0_100F = standard_pop_2005F %>% 
+  rename(nCxs_2005_0_100F = nCxsF) %>% 
+  left_join(usa_asfr %>% filter(year == 2005) %>% select(age, ASFR), by = "age") %>%
+  rename(ASFR_2005F = ASFR) %>% 
+  mutate(ASFR_2005F = replace_na(ASFR_2005F, 0))
+
+
+decomp_data_0_100F = standard_pop_1980_0_100F %>% 
+  left_join(standard_pop_2005_0_100F, by = "age")
+
+# First term: Contribution of differences in age composition
+decomp_data_0_100F = decomp_data_0_100F %>%
+  mutate(
+    diff_nC_F = nCxs_2005_0_100F - nCxs_1980_0_100F,  # Difference in age composition
+    avg_F_F = (ASFR_1980F + ASFR_2005F) / 2,  # Average ASFR for the two years
+    contrib_age_comp_F = diff_nC_F * avg_F_F  # Contribution from differences in age composition
+  )
+
+# Second term: Contribution of differences in age-specific fertility
+decomp_data_0_100F = decomp_data_0_100F %>%
+  mutate(
+    diff_F_F = ASFR_2005F - ASFR_1980F,  # Difference in ASFR
+    avg_nC_F = (nCxs_1980_0_100F + nCxs_2005_0_100F) / 2,  # Average population composition
+    contrib_age_fert_F = diff_F_F * avg_nC_F  # Contribution from differences in ASFR
+  )
+
+contrib_age_comp_total_0_100_F = sum(decomp_data_0_100F$contrib_age_comp_F, na.rm = TRUE)
+contrib_age_fert_total_0_100_F = sum(decomp_data_0_100F$contrib_age_fert_F, na.rm = TRUE)
+
+# sanity check
+delta_CBR_0_100F <- (usa_cbr_single_row$cbr2005 - usa_cbr_single_row$cbr1980)/1000
+total_decomp_0_100F <- contrib_age_comp_total_0_100_F + contrib_age_fert_total_0_100_F
+
+cat("Contribution due to Changes in Age Composition:", contrib_age_comp_total_0_100_F, "\n")
+cat("Contribution due to Changes in Age-Specific Fertility Rates:", contrib_age_fert_total_0_100_F, "\n")
+cat("Difference in Crude Birth Rate:", delta_CBR_0_100F, "\n")
+cat("Sum of Contributions due to Changes in Age Composition and Age-Specific Fertility Rates:", total_decomp_0_100F, "\n")
+
+```
+
+**(e)** **5 points ** Using data from the HFD, compare your calculation of age specific fertility rates in each period to those in the HFD by adding HFD rates to your plot from (a). If there are any large discrepancies, comment on why you think that may be. 
+
+The data was sourced from the HFD website, for the United States, under [Age-Specific Data, for Age-Specific Fertility Rates given Year and Age.](https://dhsprogram.com/publications/publication-dhsg4-dhs-questionnaires-and-manuals.cfm)
+
+```{r preprocess fertility data from hfd 3_e, eval=TRUE, echo=TRUE}
+
+lines <- readLines("~/Documents/CSDE 533 Homeworks/USA-as-fertility-rates.rtf")
+
+#skip unnecessary lines
+data_lines <- lines[11:length(lines)]
+
+# get rid of '\\' and white space
+cleaned_lines <- gsub("\\\\", "", data_lines)
+
+split_lines <- strsplit(cleaned_lines, "\\s+")
+
+hft_usa <- data.frame(Year = integer(), Age = character(), ASFR = numeric())
+
+for (line in split_lines) {
+  hft_usa <- rbind(hft_usa, data.frame(Year = as.integer(line[1]), 
+                                       Age = line[2], 
+                                       ASFR = as.numeric(line[3])))
+}
+
+hft_usa_filtered <- hft_usa %>%
+  filter(Year %in% c(1980, 2005), Age %in% as.character(15:49))
+
+hft_usa_filtered$Age <- as.numeric(as.character(hft_usa_filtered$Age))
+
+# view data:
+head(hft_usa_filtered)
+
+```
+
+```{r plot comparison between calculations and hfd data 3_e, eval=TRUE, echo=TRUE}
+
+# first select usa asfr columns that you need to plot (age, asfr, year)
+# then mutate to add a new column called "source" mutate(source= "wpp2024")
+
+# rbind() rows 
+
+# then repeat with HFD data, select only those 3 col in same order as WPP24, mutate(source= "HFD")
+
+# expect to rename columns and now everything is on the same dataframe!
+
+# lastly, create the final col w/ legend title this is what stores the colors!
+ 
+plot2 <- ggplot() +
+  # original ASFR data from usa_asfr (plot1)
+  geom_line(data = usa_asfr, aes(x = age, y = ASFR, color = as.factor(year)), size = 1.2) +
+  geom_point(data = usa_asfr, aes(x = age, y = ASFR, color = as.factor(year)), size = 2) +
+  
+  # hft_usa_filtered data
+  geom_line(data = hft_usa_filtered %>% filter(Year == 1980), aes(x = Age, y = ASFR), color = "deepskyblue", size = 1.2) +
+  geom_point(data = hft_usa_filtered %>% filter(Year == 1980), aes(x = Age, y = ASFR), color = "deepskyblue", size = 2) +
+  
+  geom_line(data = hft_usa_filtered %>% filter(Year == 2005), aes(x = Age, y = ASFR), color = "darkorchid1", size = 1.2) +
+  geom_point(data = hft_usa_filtered %>% filter(Year == 2005), aes(x = Age, y = ASFR), color = "darkorchid1", size = 2) +
+  
+  scale_color_manual(values = c("1980" = "steelblue", "2005" = "slateblue")) +
+  
+  labs(title = "Age-Specific Fertility Rate (ASFR) in the USA (1980 and 2005)",
+       x = "Age of Mother",
+       y = "Age-Specific Fertility Rates",
+       color = "Year") +
+  theme_minimal() +
+  theme(
+      axis.text.x = element_text(hjust = 1),
+      plot.title = element_text(size = 10),
+      legend.title = element_blank(),
+      legend.position = "top"
+    )
+
+plot2
+
+```
+
+The HFD data is coded as the brigher colors compared to the original data's blue and purple counterparts. These HFD values are extremely close to the calculated values, and there are no major discrepancies. The most difference is in the fertility rates for mid-to-late twenties from 2005. This may be because of who was sampled.
+
+# Problem 4: Fertility in the DHS -- 25 points
+
+Please register for a project for a country and year from the [Demographic & Health Surveys](https://dhsprogram.com). Download the Birth's Recode dataset (should have similar filename structure to our model dateset we have been using, i.e. "XXBRYYFL.DTA" where XX are two letters representing the country and YY are two numbers indicating the survey within the country.)
+
+[See the Recode manual here.](https://dhsprogram.com/publications/publication-dhsg4-dhs-questionnaires-and-manuals.cfm)
+
+**(a)** **5 points ** Use the Recode Manual linked above to find the variable that identifies whether a woman is currently using contraception or not and the variable that identifies whether a woman wants another child in the next 2 years. What are the variable names and possible recorded answers to these questions?
+
+This solution uses code provided by Jessica Godwin, course CSDE 533 Winter 2025.
+
+V312 - Current contraceptive method. Pregnant women are coded 0 "Not currently using." I will use this one as V305 is not available in this data.
+
+The possible options are:
+0   -   Not Using
+1   -   Pill 
+2   -   IUD 
+3   -   Injections 
+4   -   Diaphragm 
+5   -   Condom 
+6   -   Female Sterilization 
+7   -   Male Sterilization 
+8   -   Periodic Abstinence (Rhythm) 
+9   -   Withdrawal 
+10  -   Other
+11  -   Implants/NorplantTM
+12  -   Abstinence
+13  -   Lactational amenorrhea (lam)
+14  -   Female condom
+15  -   Foam or jelly
+16  -   Emergency contraception
+17  -   Other modern method
+18  -   Standard days method
+19  -   Country specific method 1
+20  -   Country specific method 2
+
+
+V605 - Desire for more children is a constructed variable classifying respondents who want more children by whether they want the next child soon (less than 2 years) or they want the next child later (2+ years). Sterilized women and women who want no more children are now recorded in separate categories. In some countries, women who had never had sexual intercourse were not asked the questions relating to desire for future children, and are coded 8 on V605. 
+
+The possible options are:
+1   -   wants within 2 years
+2   -   wants after 2+ years
+3   -   wants, unsure timing
+4   -   undecided
+5   -   wants no more
+6   -   sterilized (respondent or partner)                       
+7   -   declared infecund       
+8   -   never had sex 
+
+**(b)** **10 points ** Modify the `select()` function you used in Problem 1 to include the variables identified in part (a), and reload the `births` data. Using the following code specify your survey design in `R` and estimate the proportion of *women* who are using one of the following: the pill, an iud, injections, implants, or sterilization; the proportion of women who are not using any contraception; and the proportion using some other method. Present your estimates with confidence intervals in a plot.
+
+```{r load births for 4_b, eval=TRUE, echo=TRUE}
+contraceptive_data <- read_dta("~/Documents/CSDE 533 Homeworks/ZZBR62FL.DTA") %>%
+    select(caseid, bidx, v001, v002, v005, v006, v007, v009, v010, v023, v025, v312, v605, b1, b2, b5, b7) 
+
+# attr(contraceptive_data$v605, "labels")
+```
+
+```{r rescale weights 4_b, eval=TRUE, echo=TRUE}
+# Rescale sampling weights and convert v025 to a factor
+contraceptive_data <- contraceptive_data %>%
+  mutate(v005 = v005 / 1000000,  # Rescale the weights
+         v025 = factor(v025, levels = c("urban", "rural")))  # Convert v025 to factor
+
+# Create the survey design object
+mysyv_des <- svydesign(ids = ~v001 + v002, 
+                       strata = ~v023,
+                       weights = ~v005, 
+                       data = contraceptive_data, nest = TRUE)
+
+```
+
+```{r categorize methods 4_b, eval=TRUE, echo=TRUE}
+# Pill, IUD, Injections, Implants, Sterilization
+contraceptive_methods = c(1, 2, 3, 6, 7, 11)
+
+# Not using any contraception
+not_using_contraception = 0
+
+# Other methods
+other_methods = c(4, 5, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+
+# Create indicator variables in the dataset
+contraceptive_data <- contraceptive_data %>%
+  mutate(
+    using_contraceptive = ifelse(v312 %in% contraceptive_methods, 1, 0),
+    not_using_contraceptive = ifelse(v312 == not_using_contraception, 1, 0),
+    using_other_methods = ifelse(v312 %in% other_methods, 1, 0)
+  )
+
+```
+
+```{r calculate proportions contraception 4_b, eval=TRUE, echo=TRUE}
+# Proportion using any of these contraceptive methods (pill, IUD, injections, implants, sterilization)
+contraceptive_proportion = svymean(~contraceptive_data$using_contraceptive, design = mysyv_des, na.rm = TRUE)
+
+# Proportion not using any contraception
+not_using_proportion = svymean(~contraceptive_data$not_using_contraceptive, design = mysyv_des, na.rm = TRUE)
+
+# Proportion using other methods
+other_methods_proportion = svymean(~contraceptive_data$using_other_methods, design = mysyv_des, na.rm = TRUE)
+
+# Combine all proportions into a single data frame
+proportions_df = data.frame(
+  Method = c("Using Contraceptive", "Not Using", "Other Methods"),
+  Proportion = c(as.numeric(contraceptive_proportion) * 100,
+                 as.numeric(not_using_proportion) * 100,
+                 as.numeric(other_methods_proportion) * 100)
+)
+
+proportions_df
+```
+
+```{r bar plot contraception 4_b, eval=TRUE, echo=TRUE}
+
+ggplot(proportions_df, aes(x = Method, y = Proportion)) +
+  geom_bar(stat = "identity", fill = c("deepskyblue3")) +
+  geom_errorbar(aes(
+    ymin = Proportion - 1.96 * sqrt(Proportion * (100 - Proportion) / nrow(contraceptive_data)),
+    ymax = Proportion + 1.96 * sqrt(Proportion * (100 - Proportion) / nrow(contraceptive_data))
+  ), width = 0.2) +
+  labs(title = "Proportion of Women Using Contraceptive Methods",
+       y = "Proportion (%)",
+       x = "Method") +
+  theme_minimal()
+
+```
+
+**(c)** **10 points ** Modify the `select()` function you used in Problem 1 to include the variables identified in part (a), and reload the `births` data. Using the following code specify your survey design in `R` and estimate the proportion of *women* who do not want/cannot have any more children, those who want a child within 2 years, those who want a child in 2 or more years, and those who are not sure. Present your estimates with confidence intervals in a plot.
+
+```{r categorize for desire 4_c, eval=TRUE, echo=TRUE}
+# Do not want/cannot have any more children ()
+does_not_want = c(4, 5, 6, 7)
+
+# Want within 2 years
+wants_soon = c(1)
+
+# Want in 2+ years
+wants_later = c(2)
+
+# Not Sure
+unsure = c(3)
+
+# Create indicator variables in the dataset
+contraceptive_data <- contraceptive_data %>%
+  mutate(
+    no_more_kids = ifelse(v605 %in% does_not_want, 1, 0),
+    wants_within_2 = ifelse(v605 == wants_soon, 1, 0),
+    wants_after_2 = ifelse(v605 %in% wants_later, 1, 0),
+    undecided = ifelse(v605 %in% unsure, 1, 0),
+  )
+
+```
+
+```{r calculate proportions for desire 4_c, eval=TRUE, echo=TRUE}
+# Proportion of does not want/unable to have children
+no_more_proportion = svymean(~contraceptive_data$no_more_kids, design = mysyv_des, na.rm = TRUE)
+
+# Proportion wants children within 2 years
+within_2_proportion = svymean(~contraceptive_data$wants_within_2, design = mysyv_des, na.rm = TRUE)
+
+# Proportion wants children after 2 years
+after_2_proportion = svymean(~contraceptive_data$wants_after_2, design = mysyv_des, na.rm = TRUE)
+
+# Proportion unsure
+undecided_proportion = svymean(~contraceptive_data$undecided, design = mysyv_des, na.rm = TRUE)
+
+# Combine all proportions into a single data frame and create percentages from them
+proportions_df_605 = data.frame(
+  Method = c("Does Not Want/Unable", "Wants Within 2 Years", "Wants After 2 Years", "Undecided"),
+  Proportion = c(as.numeric(no_more_proportion) * 100,
+                 as.numeric(within_2_proportion) * 100,
+                 as.numeric(after_2_proportion) * 100,
+                 as.numeric(undecided_proportion) * 100)
+)
+
+proportions_df_605
+```
+
+```{r plot desire prevalences 4_c, eval=TRUE, echo=TRUE}
+
+ggplot(proportions_df_605, aes(x = Method, y = Proportion)) +
+  geom_bar(stat = "identity", fill = c("darkorchid4")) +
+  geom_errorbar(aes(
+    ymin = Proportion - 1.96 * sqrt(Proportion * (100 - Proportion) / nrow(contraceptive_data)),
+    ymax = Proportion + 1.96 * sqrt(Proportion * (100 - Proportion) / nrow(contraceptive_data))
+  ), width = 0.2) +
+  labs(title = "Proportion of Desire for Children",
+       y = "Proportion (%)",
+       x = "Desire") +
+  theme_minimal()
+```
+
+
